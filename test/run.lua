@@ -223,6 +223,7 @@ for _, file in ipairs(cons) do
 		local c = data()
 		check(c.type == "STREET_STATION_CARGO", file .. " type")
 		check(c.params[1].key == "twp_storage", file .. " storage param")
+		check(c.params[2] and c.params[2].key == "twp_auto_bays" and c.params[2].defaultIndex == 0, file .. " auto-bays param (default on)")
 		for _, case in ipairs({ { params = {}, cap = 2000 }, { params = { twp_storage = 5 }, cap = 10000 }, { params = { twp_storage = 0 }, cap = 0 } }) do
 			local r = c.updateFn(case.params)
 			check(r.models[1].id == "asset/dhl_path.mdl", file .. " path model must stay at index 0")

@@ -12,6 +12,7 @@ that the few terminals were a known problem; this fork fixes that.
 |---|---|---|
 | Terminals | 2 lay-bys on the south road | the same 2 (still terminals 1 and 2) **+ 13 loading bays** (terminals 3–15), one per painted bay and dock door on the hall's north side |
 | Storage | only what the cargo lanes give | **Storage** parameter: +0 / +500 / +1000 / **+2000** (default) / +5000 / +10000 cargo |
+| Bay use | every truck queues for the one terminal its line stop names | **Spread trucks over all bays** (default Yes): a game script gives every line stop at the warehouse all other terminals as *alternative terminals*, bays first, so trucks take whichever bay is free |
 | Construction files | 13 copies of the same script | thin wrappers around `res/scripts/truck_warehouse_plus/construction.lua` |
 
 How the bays work: trucks come off the loop onto a one-way aisle in front of the hall, drive into
@@ -21,6 +22,12 @@ Road vehicles in TpF2 cannot reverse, so the U-turn is the price of the realisti
 
 Cargo for each bay waits on a short lane behind its door, connected through a corridor inside the hall to
 the original cargo network and both street sidewalks, so transfers between terminals work.
+
+Spreading over the bays uses the game's own *alternative terminals* (line window, per stop). Every
+~2 seconds `res/config/game_script/truck_warehouse_plus.lua` looks for line stops at a warehouse whose
+alternative-terminal list is still **empty** and fills it; a stop where you picked alternatives yourself is
+never changed. Set **Spread trucks over all bays** to *No* on a warehouse to leave its lines alone. The
+game log shows a `truck_warehouse_plus: line … alternative terminals added` line for every line it updates.
 
 ## Install
 
@@ -38,6 +45,8 @@ Existing warehouses keep their original two terminals as terminals 1 and 2, so t
   and can reach the exit, no truck dead ends, every cargo area reaches both sidewalks, the new lanes
   stay clear of the wall, island, annex and fence and inside their own bay, and all 13 constructions
   build 15 terminal groups with the selected storage.
+- `lua5.2 test/auto_bays.lua`: the bay assignment (which terminals, hand-made stops left alone, no
+  re-sending, the game script against a fake `api`).
 - `python -I tools/plot.py [out.png] [x0 x1 y0 y1]`: top-down plan of the meshes with the lanes drawn on
   top (run the tests first; they write `test/out/lanes.tsv`).
 - Geometry constants (bay pitch, aisle, U-turn) live at the top of

@@ -10,6 +10,7 @@
 local constructionutil = require "constructionutil"
 local colliderutil = require "colliderutil"
 local network = require "truck_warehouse_plus/network"
+local autoBays = require "truck_warehouse_plus/auto_bays"
 
 local M = {}
 
@@ -27,6 +28,18 @@ local function storageParam()
 		tooltip = _("TWP_STORAGE_TOOLTIP"),
 		values = labels,
 		defaultIndex = M.STORAGE_DEFAULT - 1,
+		uiType = "BUTTON",
+	}
+end
+
+-- read by the game script (res/config/game_script/truck_warehouse_plus.lua), not by updateFn
+local function autoBaysParam()
+	return {
+		key = autoBays.PARAM,
+		name = _("TWP_AUTO_BAYS"),
+		tooltip = _("TWP_AUTO_BAYS_TOOLTIP"),
+		values = { _("TWP_YES"), _("TWP_NO") },
+		defaultIndex = 0,
 		uiType = "BUTTON",
 	}
 end
@@ -177,7 +190,7 @@ function M.make(brand)
 		buildMode = "MULTI",
 		categories = { "misc" },
 		order = 10,
-		params = { storageParam() },
+		params = { storageParam(), autoBaysParam() },
 		updateFn = function(params)
 			return build(brand, params)
 		end,
