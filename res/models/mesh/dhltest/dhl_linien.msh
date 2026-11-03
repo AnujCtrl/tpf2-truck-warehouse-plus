@@ -1,0 +1,54 @@
+function data()
+return {
+	matConfigs = {
+		{ 0, }, 
+	},
+	subMeshes = {
+		{
+			indices = {
+				normal = {
+					count = 10512,
+					offset = 27904,
+				},
+				position = {
+					count = 10512,
+					offset = 59440,
+				},
+				tangent = {
+					count = 10512,
+					offset = 48928,
+				},
+				uv0 = {
+					count = 10512,
+					offset = 38416,
+				},
+			},
+			materials = {
+				"dhltest/dhl_linien.mtl", 
+			},
+		}, 
+	},
+	vertexAttr = {
+		normal = {
+			count = 336,
+			numComp = 3,
+			offset = 0,
+		},
+		position = {
+			count = 14400,
+			numComp = 3,
+			offset = 13504,
+		},
+		tangent = {
+			count = 4736,
+			numComp = 4,
+			offset = 8768,
+		},
+		uv0 = {
+			count = 8432,
+			numComp = 2,
+			offset = 336,
+		},
+	},
+}
+end

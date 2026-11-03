@@ -1,0 +1,54 @@
+function data()
+return {
+	matConfigs = {
+		{ 0, }, 
+	},
+	subMeshes = {
+		{
+			indices = {
+				normal = {
+					count = 16476,
+					offset = 17208,
+				},
+				position = {
+					count = 16476,
+					offset = 66636,
+				},
+				tangent = {
+					count = 16476,
+					offset = 50160,
+				},
+				uv0 = {
+					count = 16476,
+					offset = 33684,
+				},
+			},
+			materials = {
+				"dhltest/dhl_assets.mtl", 
+			},
+		}, 
+	},
+	vertexAttr = {
+		normal = {
+			count = 516,
+			numComp = 3,
+			offset = 0,
+		},
+		position = {
+			count = 13020,
+			numComp = 3,
+			offset = 4188,
+		},
+		tangent = {
+			count = 1536,
+			numComp = 4,
+			offset = 2652,
+		},
+		uv0 = {
+			count = 2136,
+			numComp = 2,
+			offset = 516,
+		},
+	},
+}
+end

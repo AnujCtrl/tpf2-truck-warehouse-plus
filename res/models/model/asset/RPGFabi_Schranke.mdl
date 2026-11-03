@@ -1,0 +1,32 @@
+local transf = require "transf"
+function data()
+return {
+	boundingInfo = {
+		bbMax = { 0.34688699245453, 10.919300079346, 3.988569021225, },
+		bbMin = { -0.34688699245453, -0.92146098613739, -0.22190600633621, },
+	},
+	collider = {
+		params = { },
+		transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, },
+		type = "MESH",
+	},
+	lods = {
+		{
+			node = {
+				children = { },
+				name = "RootNode",
+				transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, },
+			},
+			static = false,
+			visibleFrom = 0,
+			visibleTo = 1080,
+		},
+	},
+	metadata = {
+		cost = {
+			price = -100000,
+		},
+	},
+	version = 1,
+}
+end

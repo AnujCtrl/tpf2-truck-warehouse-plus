@@ -1,0 +1,54 @@
+function data()
+return {
+	matConfigs = {
+		{ 0, }, 
+	},
+	subMeshes = {
+		{
+			indices = {
+				normal = {
+					count = 1956,
+					offset = 6200,
+				},
+				position = {
+					count = 1956,
+					offset = 8156,
+				},
+				tangent = {
+					count = 1956,
+					offset = 4244,
+				},
+				uv0 = {
+					count = 1956,
+					offset = 10112,
+				},
+			},
+			materials = {
+				"pforte/pforte_innen.mtl", 
+			},
+		}, 
+	},
+	vertexAttr = {
+		normal = {
+			count = 228,
+			numComp = 3,
+			offset = 720,
+		},
+		position = {
+			count = 1560,
+			numComp = 3,
+			offset = 948,
+		},
+		tangent = {
+			count = 720,
+			numComp = 4,
+			offset = 0,
+		},
+		uv0 = {
+			count = 1736,
+			numComp = 2,
+			offset = 2508,
+		},
+	},
+}
+end

@@ -1,0 +1,51 @@
+function data()
+return {
+	subMeshes = {
+		{
+			indices = {
+				normal = {
+					count = 2544,
+					offset = 13600,
+				},
+				position = {
+					count = 2544,
+					offset = 8512,
+				},
+				tangent = {
+					count = 2544,
+					offset = 16144,
+				},
+				uv0 = {
+					count = 2544,
+					offset = 11056,
+				},
+			},
+			materials = {
+				"dhltest/dhl_Street.mtl", 
+			},
+		},
+	},
+	vertexAttr = {
+		normal = {
+			count = 60,
+			numComp = 3,
+			offset = 7588,
+		},
+		position = {
+			count = 4548,
+			numComp = 3,
+			offset = 0,
+		},
+		tangent = {
+			count = 864,
+			numComp = 4,
+			offset = 7648,
+		},
+		uv0 = {
+			count = 3040,
+			numComp = 2,
+			offset = 4548,
+		},
+	},
+}
+end

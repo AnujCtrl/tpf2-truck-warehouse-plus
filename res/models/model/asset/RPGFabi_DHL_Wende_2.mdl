@@ -1,0 +1,68 @@
+local laneutil = require "laneutil"
+function data()
+return {
+	collider = {
+		params = { },
+		transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, },
+		type = "MESH",
+	},
+	lods = {
+		{
+			node = {
+				children = { },
+				name = "RootNode",
+				transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, },
+			},
+			static = false,
+			visibleFrom = 0,
+			visibleTo = 10,
+		},
+	},
+	metadata = {
+		cost = {
+			price = -100000,
+		},
+		transportNetworkProvider = {
+			laneLists = {
+				{
+					nodes = {
+						{
+							{ -10, 3, 0, },
+							{ 20.749955439616, 0, 0, },
+							1,
+						},
+						{
+							{ 8, -2, 0, },
+							{ 0, -20.749955439616, 0, },
+							1,
+						},
+						{
+							{ 8, -2, 0, },
+							{ 0, -37.76442853187, 0, },
+							1,
+						},
+						{
+							{ 25, -2, 0, },
+							{ 0, 37.76442853187, 0, },
+							1,
+						},
+						{
+							{ 25, -2, 0, },
+							{ 0, 39.877774537192, 0, },
+							1,
+						},
+						{
+							{ -10, 6, 0, },
+							{ -39.877774537192, 0, 0, },
+							1,
+						},
+					},
+					speedLimit = 30,
+					transportModes = { "TRUCK", },
+				},
+			},
+		},
+	},
+	version = 1,
+}
+end
