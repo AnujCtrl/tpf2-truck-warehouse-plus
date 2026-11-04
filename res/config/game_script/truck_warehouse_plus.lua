@@ -140,7 +140,11 @@ local function findOutdated()
 			end
 			return nil
 		end,
-	}, { terminals = #network.build().terminals, street = network.GATE_STREET })
+		laneCount = function(conId)
+			local tn = api.engine.getComponent(conId, api.type.ComponentType.TRANSPORT_NETWORK)
+			return tn and tn.edges and #tn.edges or nil
+		end,
+	}, { terminals = #network.build().terminals, street = network.GATE_STREET, lanes = network.laneCount() })
 end
 
 -- engine thread (handleEvent): rebuild the warehouses the popup listed
@@ -219,11 +223,20 @@ local function guiCheck()
 	if guiChecked then return end
 	if guiFrames < POPUP_AFTER_FRAMES then return end
 	guiChecked = true
-	local ok, outdated = pcall(findOutdated)
+	local ok, outdated, laneStats = pcall(findOutdated)
+	if ok then
+		local parts = {}
+		for lanes, n in pairs(laneStats or {}) do parts[#parts + 1] = lanes .. " lanes x" .. n end
+		table.sort(parts)
+		print(LOG .. "warehouses: " .. (#parts > 0 and table.concat(parts, ", ") or "none")
+			.. " (current layout: " .. network.laneCount() .. ")")
+	end
 	if not ok then
 		print(LOG .. "layout check failed: " .. tostring(outdated))
 	elseif #outdated > 0 then
-		print(LOG .. #outdated .. " warehouse(s) built with an older layout")
+		print(LOG .. #outdated .. " warehouse(s) built with an older layout (now " .. #network.build().terminals
+			.. " terminals, " .. network.laneCount() .. " lanes); first: " .. tostring(outdated[1].terminals)
+			.. " terminals, " .. tostring(outdated[1].lanes) .. " lanes, " .. tostring(outdated[1].street))
 		local shown, err = pcall(showPopup, outdated)
 		if not shown then print(LOG .. "popup failed: " .. tostring(err)) end
 	end

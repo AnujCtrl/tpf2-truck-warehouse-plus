@@ -67,34 +67,46 @@ f()
 local orig = data().metadata.transportNetworkProvider
 local oedges, onodes = edgesOf(orig)
 
--- 1. every original edge survives, unchanged; the straight north road may be cut into
--- collinear pieces that still run exactly from x = -60 to x = -134 at y = 19
-local function northRoadIntact()
-	local from, seen = {}, 0
+-- 1. every original edge survives, unchanged. A straight one (both tangents = its chord) may be
+-- cut into collinear straight pieces that chain exactly from its start to its end; their inner
+-- nodes are where new lanes join or leave it.
+local cutNodes = {}
+local function cutIntact(oe)
+	local a, b = oe.a[1], oe.b[1]
+	local d = { b[1] - a[1], b[2] - a[2] }
+	local len = math.sqrt(d[1] ^ 2 + d[2] ^ 2)
+	local function straight(t) return near(t[1], d[1], 1e-6) and near(t[2], d[2], 1e-6) end
+	if len == 0 or not straight(oe.a[2]) or not straight(oe.b[2]) then return false end
+	local function onLine(p)
+		local cross = (p[1] - a[1]) * d[2] - (p[2] - a[2]) * d[1]
+		local along = ((p[1] - a[1]) * d[1] + (p[2] - a[2]) * d[2]) / len
+		return math.abs(cross) / len < 1e-6 and along > -1e-6 and along < len + 1e-6
+	end
+	local from = {}
 	for _, ne in ipairs(edges) do
-		if hasMode(ne, "TRUCK") and ne.a[1][2] == 19 and ne.b[1][2] == 19 and ne.a[2][2] == 0 and ne.b[2][2] == 0
-			and ne.a[1][1] <= -60 and ne.b[1][1] >= -134 and ne.b[1][1] < ne.a[1][1] then
-			from[ne.a[1][1]] = ne
-			seen = seen + 1
+		if hasMode(ne, oe.modes[1]) and onLine(ne.a[1]) and onLine(ne.b[1]) then
+			local c = { ne.b[1][1] - ne.a[1][1], ne.b[1][2] - ne.a[1][2] }
+			local same = c[1] * d[1] + c[2] * d[2] > 0
+			local tOk = near(ne.a[2][1], c[1], 1e-6) and near(ne.a[2][2], c[2], 1e-6) and near(ne.b[2][1], c[1], 1e-6) and near(ne.b[2][2], c[2], 1e-6)
+			if same and tOk then from[key(ne.a[1])] = ne end
 		end
 	end
-	local x, pieces = -60, 0
-	while from[x] do
-		local ne = from[x]
-		local len = ne.a[1][1] - ne.b[1][1]
-		if not (near(ne.a[2][1], -len) and near(ne.b[2][1], -len)) then return false end
-		x, pieces = ne.b[1][1], pieces + 1
+	local k, pieces, inner = key(a), 0, {}
+	while from[k] and pieces < 100 do
+		local ne = from[k]
+		k, pieces = key(ne.b[1]), pieces + 1
+		if k ~= key(b) then inner[#inner + 1] = k end
 	end
-	return x == -134 and pieces == seen
+	if k ~= key(b) or pieces < 2 then return false end
+	for _, n in ipairs(inner) do cutNodes[n] = true end
+	return true
 end
 for i, oe in ipairs(oedges) do
 	local found = false
 	for _, ne in ipairs(edges) do
 		if sameNode(oe.a, ne.a) and sameNode(oe.b, ne.b) and hasMode(ne, oe.modes[1]) then found = true break end
 	end
-	if not found and key(oe.a[1]) == key({ -60, 19, 0 }) and key(oe.b[1]) == key({ -134, 19, 0 }) then
-		found = northRoadIntact()
-	end
+	if not found then found = cutIntact(oe) end
 	check(found, "original edge " .. (i - 1) .. " missing: " .. key(oe.a[1]) .. " -> " .. key(oe.b[1]))
 end
 
@@ -131,9 +143,9 @@ for i, t in ipairs(new.terminals) do
 end
 for _, l in ipairs(new.laneLists) do check(#l.nodes % 2 == 0, "odd node count in a lane list") end
 
--- 4. trucks: every terminal reachable from its way in, its way out reachable from it, the two
--- traffic streams (bays / lay-bys + parking) on separate gate lanes all the way through, and
--- no dead ends anywhere (one-way lanes, joined by position)
+-- 4. trucks: every terminal reachable from both gate lanes and able to reach both exit lanes,
+-- each stream's own lane the shorter way in, and no dead ends anywhere (one-way lanes, joined
+-- by position)
 local out, inn = {}, {}
 for _, e in ipairs(edges) do
 	if hasMode(e, "TRUCK") then
@@ -161,17 +173,50 @@ local function reach(from)
 	end
 	return seen
 end
-local fromN, fromS = reach(IN_N), reach(IN_S)
-check(not fromN[OUT_INNER] and not fromS[OUT_OUTER], "the two ways in must not lead into each other's way out")
+-- shortest driving distance along the lanes (edge length sampled from the curve)
+local wout = {}
+for _, e in ipairs(edges) do
+	if hasMode(e, "TRUCK") then
+		local len, prev = 0, hermite(e, 0)
+		for k = 1, 50 do
+			local q = hermite(e, k / 50)
+			len = len + math.sqrt((q[1] - prev[1]) ^ 2 + (q[2] - prev[2]) ^ 2)
+			prev = q
+		end
+		local a = key(e.a[1])
+		wout[a] = wout[a] or {}
+		table.insert(wout[a], { key(e.b[1]), len })
+	end
+end
+local function dist(from)
+	local d, done = { [from] = 0 }, {}
+	while true do
+		local best, bk = math.huge, nil
+		for k, v in pairs(d) do if not done[k] and v < best then best, bk = v, k end end
+		if not bk then return d end
+		done[bk] = true
+		for _, x in ipairs(wout[bk] or {}) do
+			local nd = best + x[2]
+			if not d[x[1]] or nd < d[x[1]] then d[x[1]] = nd end
+		end
+	end
+end
+local fromN, fromS = dist(IN_N), dist(IN_S)
+if os.getenv("TWP_SHOW_DIST") then for i, t in ipairs(new.terminals) do local vp = key(nodes[t.vehicleNode + 1].node[1]) print(i, fromN[vp], fromS[vp]) end end
 for i, t in ipairs(new.terminals) do
 	local vp = key(nodes[t.vehicleNode + 1].node[1])
 	local after = reach(vp)
-	if i >= 3 and i < FIRST_PARK then
-		check(fromS[vp] and not fromN[vp], "bay terminal " .. i .. " must be reached from the gate's south lane only")
-		check(after[OUT_INNER] and not after[OUT_OUTER], "bay terminal " .. i .. " must leave by the inner lane only")
-	else
-		check(fromN[vp] and not fromS[vp], "terminal " .. i .. " must be reached from the gate's north lane only")
-		check(after[OUT_OUTER] and not after[OUT_INNER], "terminal " .. i .. " must leave by the outer lane only")
+	-- whichever lane the street puts a truck in, it gets everywhere and out either lane:
+	-- no leaving and coming back in (seen in game with 1.5)
+	check(fromN[vp] and fromS[vp], "terminal " .. i .. " not reachable from both gate lanes")
+	check(after[OUT_INNER] and after[OUT_OUTER], "terminal " .. i .. " cannot reach both exit lanes")
+	-- ... but each stream's own lane stays the shorter way in, so the lanes are both used
+	if fromN[vp] and fromS[vp] then
+		if i >= 3 and i < FIRST_PARK then
+			check(fromS[vp] < fromN[vp], string.format("bay terminal %d: south lane %.1f m must beat north lane %.1f m", i, fromS[vp], fromN[vp]))
+		else
+			check(fromN[vp] < fromS[vp], string.format("terminal %d: north lane %.1f m must beat south lane %.1f m", i, fromN[vp], fromS[vp]))
+		end
 	end
 end
 for n, succ in pairs(out) do
@@ -267,12 +312,8 @@ do
 	end
 	local origNode = {}
 	for _, oe in ipairs(oedges) do origNode[key(oe.a[1])] = true; origNode[key(oe.b[1])] = true end
-	-- cut points of the original north road are merge points too
-	for _, ne in ipairs(edges) do
-		if hasMode(ne, "TRUCK") and ne.a[1][2] == 19 and ne.b[1][2] == 19 and ne.a[1][1] <= -60 and ne.b[1][1] >= -134 then
-			origNode[key(ne.a[1])] = true; origNode[key(ne.b[1])] = true
-		end
-	end
+	-- cut points of original straight edges are merge points too
+	for n in pairs(cutNodes) do origNode[n] = true end
 	for _, e in ipairs(edges) do
 		if hasMode(e, "TRUCK") and not origKeys[key(e.a[1]) .. ">" .. key(e.b[1])]
 			and not origNode[key(e.a[1])] and not origNode[key(e.b[1])] then

@@ -84,9 +84,10 @@ entities[200] = "group"
 local params = {}
 local fakeTerminals = 15
 local fakeStreet = "standard/country_medium_new.lua"
+local fakeLanes = 0
 _G.api = {
 	type = {
-		ComponentType = { STATION_GROUP = "SG", CONSTRUCTION = "CON", STATION = "ST", LINE = "LINE", BASE_EDGE_STREET = "BES" },
+		ComponentType = { STATION_GROUP = "SG", CONSTRUCTION = "CON", STATION = "ST", LINE = "LINE", BASE_EDGE_STREET = "BES", TRANSPORT_NETWORK = "TN" },
 		Line = { new = function() return { stops = {} } end },
 		StationTerminal = { new = function() return {} end },
 	},
@@ -96,6 +97,7 @@ _G.api = {
 			if t == "SG" then return ({ [100] = { stations = { 10 } }, [200] = { stations = { 20 } } })[e] end
 			if t == "CON" and e == 50 then return { fileName = "assets/dhl_warenlager.con", params = params, frozenEdges = { 77 } } end
 			if t == "BES" and e == 77 then return { streetType = fakeStreet } end
+			if t == "TN" and e == 50 then local es = {} for i = 1, fakeLanes do es[i] = {} end return { edges = es } end
 			if t == "ST" and e == 10 then local ts = {} for i = 1, fakeTerminals do ts[i] = {} end return { terminals = ts } end
 			if t == "LINE" then return fakeLines[e] end
 		end,
@@ -184,6 +186,21 @@ end
 check(#streetCase("two_way.lua") == 1, "21 terminals but two-way gates: outdated")
 check(#streetCase("one_way.lua") == 0, "21 terminals and one-way gates: current")
 check(#streetCase(nil) == 0, "street type unknown: judged by terminals only")
+local function laneCase(lanes)
+	return upgrade.findOutdated({
+		stationConstructions = function() return { [11] = 51 } end,
+		construction = function() return { fileName = "assets/ups_warenlager.con" } end,
+		terminalCount = function() return 21 end,
+		gateStreet = function() return "one_way.lua" end,
+		laneCount = function() return lanes end,
+	}, { terminals = 21, street = "one_way.lua", lanes = 280 })
+end
+check(#laneCase(270) == 1, "fewer lanes than the current layout: outdated")
+check(#laneCase(280) == 0, "same lanes: current")
+check(#laneCase(300) == 0, "more lanes (something the game adds): never a rebuild loop")
+check(#laneCase(nil) == 0, "lanes unknown: judged by the rest")
+local _, stats = laneCase(270)
+check(stats["270"] == 1, "lane counts are reported for the log")
 local rp = upgrade.rebuildParams({ seed = 7, twp_storage = 2, nested = { a = 1 } })
 check(rp.seed == nil and rp.twp_storage == 2 and rp.nested.a == 1, "rebuild keeps the params, drops the seed")
 check(next(upgrade.rebuildParams(nil)) == nil, "rebuild with no params")
@@ -215,13 +232,15 @@ local events = {}
 local guiInterface = { sendScriptEvent = function(id, name, param) events[#events + 1] = { id, name, param } end }
 local engineInterface = { upgradeConstruction = function(id, file, prm)
 	upgrades[#upgrades + 1] = { id, file, prm }
-	fakeStreet = network.GATE_STREET
+	fakeLanes = network.laneCount()
 end }
 _G.game = { interface = guiInterface }
 api.res = { streetTypeRep = { getName = function(i) return i end } }
 entities[77] = "edge"
--- a 1.3/1.4 warehouse: already 21 terminals, but still two-way gate stubs
+-- a 1.5 warehouse: 21 terminals and one-way gate stubs, but without the 1.6 crossovers
 fakeTerminals = #network.build().terminals
+fakeStreet = network.GATE_STREET
+fakeLanes = network.laneCount() - 12
 local strings = (function() dofile("strings.lua") return data().en end)()
 _G._ = function(s) return strings[s] or s end
 params = { twp_storage = 5, seed = 99 }

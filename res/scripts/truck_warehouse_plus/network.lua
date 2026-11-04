@@ -40,6 +40,13 @@ M.GATE_IN_N = { 15.5, -0.65701 } -- original way in: loop (lay-bys) and parking 
 M.GATE_IN_S = { 15.5, -4.65701 } -- second way in: the bays
 M.GATE_OUT_OUTER = { 15.5, -60.0858 } -- original way out: lay-bys and parking slots
 M.GATE_OUT_INNER = { 15.5, -56.0858 } -- second way out: the bays
+-- 1.6: which gate lane a truck ends up in is decided by the player's roads (in game, every truck
+-- turning in from the main road landed in the north lane, and the bays' exit lane fed straight
+-- back into the entrance). With one stream per lane that sent trucks out and back in again.
+-- Crossovers just inside each gate let either lane reach everything; the direct lane stays the
+-- shorter route, so trucks only use a crossover when the street left them in the other lane.
+M.IN_CROSS_X0, M.IN_CROSS_X1 = -3.0, -16.0 -- north gate: crossovers from x0 (west of the gatehouse) to x1
+M.OUT_CROSS = { -24.0, -22.0, -8.0, -6.0 } -- south gate: outer->inner from [1] to [4], inner->outer [2] to [3]
 
 -- The loop is two lanes from where the bays join it to the south gate. The outer lane is the
 -- original loop (lay-bys, parking); the inner one runs parallel inside it and carries the bays.
@@ -74,6 +81,15 @@ M.DOOR_Y = -20.5
 -- (3 x the usual Bezier handle 0.5523 r).
 local function quarter(r)
 	return r * 4 * (math.sqrt(2) - 1)
+end
+
+-- number of lanes (edges) in the layout; the warehouse's transport network has exactly these,
+-- as no other model of the construction carries lanes (fence_metal.mdl and the brand signs
+-- have none)
+function M.laneCount()
+	local n = 0
+	for _, l in ipairs(M.build().laneLists) do n = n + #l.nodes / 2 end
+	return n
 end
 
 function M.bayCenter(k)
@@ -153,8 +169,8 @@ end
 
 ---------------------------------------------------------------------------
 -- original network (unchanged geometry, from the 2021 dhl_path.mdl by RPGFabi /
--- elektronikfreak), edge for edge, except that the north road is cut in two where the
--- parking exit joins it.
+-- elektronikfreak), edge for edge, except that three straight edges are cut into collinear
+-- pieces where new lanes join or leave them (north road, entry road, exit road).
 
 local function originalTruckLanes(b, truck)
 	local E = function(x0, y0, tx0, ty0, x1, y1, tx1, ty1)
@@ -164,7 +180,10 @@ local function originalTruckLanes(b, truck)
 	-- loop: enters from the north street stub, runs anticlockwise round the site,
 	-- leaves through the south street stub
 	E(15.5, -0.65701, -10.9, 0, 4.6, 0, -10.9, 0)
-	E(4.6, 0, -24.6, 0, -20, 0, -24.6, 0)
+	-- (cut where the north gate's crossover leaves it)
+	local cx = M.IN_CROSS_X0
+	E(4.6, 0, cx - 4.6, 0, cx, 0, cx - 4.6, 0)
+	E(cx, 0, -20 - cx, 0, -20, 0, -20 - cx, 0)
 	E(-20, 0, -40, 0, -60, 19, -40, 0)
 	-- north road: one straight edge in the original, cut where the parking exit joins it
 	-- (same line, tangents scaled to each piece)
@@ -178,7 +197,11 @@ local function originalTruckLanes(b, truck)
 	E(-127, -61, 28, 0, -99, -61, 28, 0)
 	E(-99, -61, 28, 0, -71, -61, 28, 0)
 	E(-71, -61, 28, 0, -43, -61, 28, 0)
-	E(-43, -61, 47.6, 0, 4.6, -61, 47.6, 0)
+	-- (cut where the south gate's crossovers leave and join it)
+	local oa, ob = M.OUT_CROSS[1], M.OUT_CROSS[3]
+	E(-43, -61, oa + 43, 0, oa, -61, oa + 43, 0)
+	E(oa, -61, ob - oa, 0, ob, -61, ob - oa, 0)
+	E(ob, -61, 4.6 - ob, 0, 4.6, -61, 4.6 - ob, 0)
 	E(4.6, -61, 10.9, 0, 15.5, -60.0858, 10.9, 0)
 	-- lay-by 1
 	E(-99, -61, 10, 0, -89, -55.5, 10, 0)
@@ -247,7 +270,13 @@ local function dockTruckLanes(b, truck, orig)
 	-- aisle south of the loop's entry curve (which climbs faster, so they never cross)
 	local gx, gy = M.GATE_IN_S[1], M.GATE_IN_S[2]
 	local bendX, aisleStartX = -22.0, -44.0
-	b.straight(truck, P(gx, gy), P(bendX, gy))
+	local c0, c1 = M.IN_CROSS_X0, M.IN_CROSS_X1
+	b.straight(truck, P(gx, gy), P(c0, gy))
+	b.straight(truck, P(c0, gy), P(c1, gy))
+	b.straight(truck, P(c1, gy), P(bendX, gy))
+	-- crossovers (an X): south lane -> the north lane's junction at (-20, 0), north lane -> south lane
+	b.edge(truck, P(c0, gy), T(-20 - c0, 0), P(-20, 0), T(-20 - c0, 0))
+	b.edge(truck, P(c0, 0), T(c1 - c0, 0), P(c1, gy), T(c1 - c0, 0))
 	b.edge(truck, P(bendX, gy), T(aisleStartX - bendX, 0), P(aisleStartX, A), T(aisleStartX - bendX, 0))
 	-- aisle: cut at every bay entry, ends at the westernmost one
 	local x = aisleStartX
@@ -288,11 +317,17 @@ local function dockTruckLanes(b, truck, orig)
 	b.edge(truck, P(WX + rNW, NY), T(-quarter(rNW), 0), P(WX, NY - rNW), T(0, -quarter(rNW)))
 	b.straight(truck, P(WX, NY - rNW), P(WX, SY + rSW))
 	b.edge(truck, P(WX, SY + rSW), T(0, -quarter(rSW)), P(WX + rSW, SY), T(quarter(rSW), 0))
-	local riseX, gateX = -30.0, -10.0
 	local ox, oy = M.GATE_OUT_INNER[1], M.GATE_OUT_INNER[2]
+	local riseX = -36.0
+	local x1, x2, x3, x4 = M.OUT_CROSS[1], M.OUT_CROSS[2], M.OUT_CROSS[3], M.OUT_CROSS[4]
 	b.straight(truck, P(WX + rSW, SY), P(riseX, SY))
-	b.edge(truck, P(riseX, SY), T(gateX - riseX, 0), P(gateX, oy), T(gateX - riseX, 0))
-	b.straight(truck, P(gateX, oy), P(ox, oy))
+	b.edge(truck, P(riseX, SY), T(x1 - riseX, 0), P(x1, oy), T(x1 - riseX, 0))
+	b.straight(truck, P(x1, oy), P(x2, oy))
+	b.straight(truck, P(x2, oy), P(x4, oy))
+	b.straight(truck, P(x4, oy), P(ox, oy))
+	-- crossovers (an X) to the outer exit lane at y = -61 and back
+	b.edge(truck, P(x2, oy), T(x3 - x2, 0), P(x3, -61), T(x3 - x2, 0))
+	b.edge(truck, P(x1, -61), T(x4 - x1, 0), P(x4, oy), T(x4 - x1, 0))
 	return bays
 end
 
