@@ -5,14 +5,15 @@
 -- start of a session (game.interface.upgradeConstruction with the warehouse's own params,
 -- the same call the Move It mod uses for its "dummy upgrade").
 --
--- Fingerprint: the station's terminal count. Every layout change so far changed it
--- (2 -> 15 -> 21); a future change that keeps the count must bump the fingerprint some
--- other way.
+-- Fingerprint: the station's terminal count (2 -> 15 -> 21) and the street type of the gate
+-- stubs (two-way until 1.4, one-way since 1.5). A future change that keeps both must add
+-- something else here.
 --
 -- adapter = {
 --   stationConstructions() -> pairs of stationId -> constructionId
 --   construction(id)       -> { fileName = ..., params = ... } or nil
 --   terminalCount(station) -> number or nil
+--   gateStreet(id)         -> street type file of the construction's stubs, or nil if unknown
 -- }
 
 local M = {}
@@ -21,7 +22,8 @@ function M.isWarehouse(fileName)
 	return type(fileName) == "string" and fileName:match("_warenlager%.con$") ~= nil
 end
 
--- { { id, fileName, terminals }, ... } for every warehouse whose terminal count is not `expected`
+-- { { id, fileName, terminals }, ... } for every warehouse that does not match
+-- expected = { terminals = n, street = "standard/....lua" }
 function M.findOutdated(adapter, expected)
 	local seen, out = {}, {}
 	for stationId, conId in pairs(adapter.stationConstructions()) do
@@ -30,8 +32,11 @@ function M.findOutdated(adapter, expected)
 			local con = adapter.construction(conId)
 			if con and M.isWarehouse(con.fileName) then
 				local n = adapter.terminalCount(stationId)
-				if type(n) == "number" and n ~= expected then
-					out[#out + 1] = { id = conId, fileName = con.fileName, terminals = n }
+				local street = adapter.gateStreet and adapter.gateStreet(conId) or nil
+				local wrongCount = type(n) == "number" and n ~= expected.terminals
+				local wrongStreet = type(street) == "string" and expected.street ~= nil and street ~= expected.street
+				if wrongCount or wrongStreet then
+					out[#out + 1] = { id = conId, fileName = con.fileName, terminals = n, street = street }
 				end
 			end
 		end

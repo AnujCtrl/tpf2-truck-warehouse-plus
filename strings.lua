@@ -7,6 +7,7 @@ return {
 				"- 21 Haltepunkte: die 2 ursprünglichen an der Südstraße, 13 Laderampen an der Nordseite der Halle und 6 LKW-Stellplätze am Nordtor\n" ..
 				"- einstellbares Lager (+0 bis +10000 Fracht)\n" ..
 				"- Linien verteilen ihre LKW automatisch auf alle freien Rampen (abschaltbar)\n" ..
+				"- Tore als zweispurige Einbahnstraßen: Nordtor hinein, Südtor hinaus, zweispuriger Rundweg dazwischen (passende Einbahnstraßen anschließen)\n" ..
 				"Ersetzt das Original (gleiche Dateien): bitte das Workshop-Original deaktivieren.\n" ..
 				"- Kosten: 120.000, verfügbar ab 2000"),
 		["TWP_STORAGE"] = "Lager",
@@ -28,6 +29,7 @@ return {
 				"- 21 terminals: the 2 original lay-bys on the south road, 13 loading bays on the north side of the hall and 6 truck parking slots inside the north gate\n" ..
 				"- adjustable storage (+0 to +10000 cargo)\n" ..
 				"- lines spread their trucks over every free bay automatically (can be switched off)\n" ..
+				"- two-lane one-way gates: in at the north gate, out at the south gate, two-lane loop in between (connect matching one-way roads)\n" ..
 				"Replaces the original (same files): disable the Workshop original.\n" ..
 				"- Cost: 120,000, available from 2000"),
 		["TWP_STORAGE"] = "Storage",

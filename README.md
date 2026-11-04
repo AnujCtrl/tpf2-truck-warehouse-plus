@@ -11,7 +11,7 @@ that the few terminals were a known problem; this fork fixes that.
 | | Original | Plus |
 |---|---|---|
 | Terminals | 2 lay-bys on the south road | the same 2 (still terminals 1 and 2) **+ 13 loading bays** (terminals 3–15), one per painted bay and dock door on the hall's north side, **+ 6 truck parking slots** (terminals 16–21) inside the north gate |
-| Exits | everything leaves round one loop through the south gate | two exits: the north gate's outbound lane (never used by the original) and the loop to the south gate, ~10 terminals each |
+| Gates | two-way, one lane each way; everything in at the north gate and out round a one-lane loop through the south gate | both gates one-way, two lanes: in at the north gate, out at the south gate, two-lane loop in between; bays on one lane, lay-bys and parking on the other |
 | Storage | only what the cargo lanes give | **Storage** parameter: +0 / +500 / +1000 / **+2000** (default) / +5000 / +10000 cargo |
 | Bay use | every truck queues for the one terminal its line stop names | **Spread trucks over all bays** (default Yes): a game script gives every line stop at the warehouse all other terminals as *alternative terminals*, bays first, so trucks take whichever bay is free |
 | Construction files | 13 copies of the same script | thin wrappers around `res/scripts/truck_warehouse_plus/construction.lua` |
@@ -22,20 +22,26 @@ sits backed onto the door. Road vehicles in TpF2 cannot reverse, so the U-turn i
 realistic parked pose. The parking slots work the same way: in from the gate, U-turn at the fence end,
 parked facing out (the first slot turns early, before the barrier bar over its far end).
 
-Where they leave: each gate has one outbound lane onto your road, and that lane is what limits a busy
-warehouse. TpF2 picks a truck's route by the fastest *planned* route, not by queues, so offering a choice
-would send every truck the short way. The exits are therefore split by terminal:
+Gates and the loop (1.5): both gate stubs are **one-way two-lane roads**. The north gate is the way
+**in** on both lanes, the south gate the way **out** on both lanes, and the loop round the building is two
+lanes from where the bays join it to the south gate. Each stream keeps its own lane all the way:
 
-- the other 10 bays (terminals 6–15): right turn onto an
-  eastbound lane along the bay mouths, out through the **north gate** (the yard road was painted two-way
-  all along; the original only drove in)
-- the 3 westernmost bays (terminals 3–5): left turn onto a westbound lane along the bay mouths, north at
-  the far end onto the loop, out through the **south gate**
-- the 6 parking slots: west onto a collector that joins the loop's north road, out through the
-  **south gate** (going out through the north gate would cross its incoming lane)
-- the 2 lay-bys: the original loop, **south gate**
+| | way in (north gate) | way out |
+|---|---|---|
+| 13 loading bays | south lane → yard road → aisle | west along the bay mouths → loop, inner lane → south gate, inner lane |
+| 6 parking slots | north lane → round the gate island | collector → loop, outer lane → south gate, outer lane |
+| 2 lay-bys | north lane → loop, outer lane | loop, outer lane → south gate, outer lane |
 
-(1.0/1.1 sent every bay round the loop, 1.2 every bay through the north gate; each jammed its gate.)
+TpF2 routes trucks by the fastest *planned* route, not by queues, and model lanes have no lane
+changing, so two parallel lanes are only both used when different traffic is assigned to each; hence
+the fixed split above.
+
+**Your roads must match:** connect the north gate with a road that runs one-way *into* the gate and the
+south gate with a road that runs one-way *out of* it (e.g. *Two-lane one-way road*). A two-way road
+on either gate leaves one of its lanes facing the wrong way.
+
+(1.0 sent every bay round a single-lane loop, 1.2 every bay out through the north gate, 1.3 split them
+between the gates; each jammed a single lane.)
 
 Cargo for each bay waits on a short lane behind its door, connected through a corridor inside the hall to
 the original cargo network and both street sidewalks, so transfers between terminals work.
@@ -63,7 +69,7 @@ lines stay attached). You can also rebuild one by changing any of its settings.
 
 - `lua5.2 test/run.lua`: checks (headless, against the game's own `res/scripts`):
   the original network is preserved, all indices are valid, every terminal is reachable from the entrance
-  and can reach its own exit (east bays: only the north gate; west bays, parking and lay-bys: only the south gate), no truck dead ends, every cargo area reaches both sidewalks, the new lanes
+  and can reach its own way out (bays: the gates' south/inner lanes only; parking and lay-bys: the north/outer lanes only), no truck dead ends, new lanes keep a truck width from the original loop, every cargo area reaches both sidewalks, the new lanes
   stay clear of the wall, islands, annex, barrier bar and fences and inside their own bay or slot, and all 13 constructions
   build 15 terminal groups with the selected storage.
 - `lua5.2 test/auto_bays.lua`: the bay assignment (which terminals, hand-made stops left alone, old

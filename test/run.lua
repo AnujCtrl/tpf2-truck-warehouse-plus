@@ -131,8 +131,9 @@ for i, t in ipairs(new.terminals) do
 end
 for _, l in ipairs(new.laneLists) do check(#l.nodes % 2 == 0, "odd node count in a lane list") end
 
--- 4. trucks: every terminal reachable from the entrance, exit reachable from every terminal,
--- and no dead ends anywhere (one-way lanes, joined by position)
+-- 4. trucks: every terminal reachable from its way in, its way out reachable from it, the two
+-- traffic streams (bays / lay-bys + parking) on separate gate lanes all the way through, and
+-- no dead ends anywhere (one-way lanes, joined by position)
 local out, inn = {}, {}
 for _, e in ipairs(edges) do
 	if hasMode(e, "TRUCK") then
@@ -143,9 +144,13 @@ for _, e in ipairs(edges) do
 		inn[a] = inn[a] or 0
 	end
 end
-local ENTRY, EXIT = key({ 15.5, -0.65701, 0 }), key({ 15.5, -60.0858, 0 })
-local EXIT_NORTH = key({ network.GATE_OUT[1], network.GATE_OUT[2], 0 })
-local LOOP_NORTH = key({ -60, 19, 0 }) -- start of the loop's north road
+local function gate(p) return key({ p[1], p[2], 0 }) end
+local IN_N, IN_S = gate(network.GATE_IN_N), gate(network.GATE_IN_S)
+local OUT_OUTER, OUT_INNER = gate(network.GATE_OUT_OUTER), gate(network.GATE_OUT_INNER)
+check(IN_N == key({ 15.5, -0.65701, 0 }) and OUT_OUTER == key({ 15.5, -60.0858, 0 }), "original gate lanes moved")
+-- every gate lane is one of the street's lanes: stub centre +- 2 m
+check(near(network.GATE_IN_N[2], -2.65701 + 2, 1e-4) and near(network.GATE_IN_S[2], -2.65701 - 2, 1e-4), "north gate lanes off the street lanes")
+check(near(network.GATE_OUT_INNER[2], -58.0858 + 2, 1e-4) and near(network.GATE_OUT_OUTER[2], -58.0858 - 2, 1e-4), "south gate lanes off the street lanes")
 local function reach(from)
 	local seen, q = { [from] = true }, { from }
 	while #q > 0 do
@@ -156,26 +161,22 @@ local function reach(from)
 	end
 	return seen
 end
-local fromEntry = reach(ENTRY)
+local fromN, fromS = reach(IN_N), reach(IN_S)
+check(not fromN[OUT_INNER] and not fromS[OUT_OUTER], "the two ways in must not lead into each other's way out")
 for i, t in ipairs(new.terminals) do
 	local vp = key(nodes[t.vehicleNode + 1].node[1])
-	check(fromEntry[vp], "terminal " .. i .. " not reachable from the entrance")
 	local after = reach(vp)
-	if i <= 2 then
-		check(after[EXIT], "lay-by " .. i .. " cannot reach the south exit")
-	elseif i <= 2 + network.WEST_EXIT_BAYS then
-		check(after[EXIT] and not after[EXIT_NORTH], "west bay terminal " .. i .. " must leave by the south gate only")
-		check(not after[LOOP_NORTH], "west bay terminal " .. i .. " drives the whole loop instead of joining at the west end")
-	elseif i < FIRST_PARK then
-		check(after[EXIT_NORTH], "bay terminal " .. i .. " cannot reach the north gate exit")
-		check(not after[LOOP_NORTH] and not after[EXIT], "bay terminal " .. i .. " can still drive into the loop")
+	if i >= 3 and i < FIRST_PARK then
+		check(fromS[vp] and not fromN[vp], "bay terminal " .. i .. " must be reached from the gate's south lane only")
+		check(after[OUT_INNER] and not after[OUT_OUTER], "bay terminal " .. i .. " must leave by the inner lane only")
 	else
-		check(after[EXIT] and not after[EXIT_NORTH], "parking terminal " .. i .. " must leave by the south gate only")
+		check(fromN[vp] and not fromS[vp], "terminal " .. i .. " must be reached from the gate's north lane only")
+		check(after[OUT_OUTER] and not after[OUT_INNER], "terminal " .. i .. " must leave by the outer lane only")
 	end
 end
 for n, succ in pairs(out) do
-	check(#succ > 0 or n == EXIT or n == EXIT_NORTH, "truck dead end at " .. n)
-	check((inn[n] or 0) > 0 or n == ENTRY, "truck node nobody drives into: " .. n)
+	check(#succ > 0 or n == OUT_OUTER or n == OUT_INNER, "truck dead end at " .. n)
+	check((inn[n] or 0) > 0 or n == IN_N or n == IN_S, "truck node nobody drives into: " .. n)
 end
 
 -- 5. cargo: every terminal's waiting area is connected to both street sidewalks
@@ -217,7 +218,7 @@ for _, e in ipairs(edges) do
 			local p = hermite(e, s)
 			check(not inRect(p, -104, -57, 9.9, 12.4, HALF), "lane hits the traffic island at " .. key(p))
 			check(not inRect(p, -135, -119, -53, 12, HALF), "lane hits the west annex at " .. key(p))
-			check(not (p[1] > -120 and p[1] < -42 and p[2] < network.WALL_Y + 0.4), "lane goes through the dock wall at " .. key(p))
+			check(not (p[1] > -120 and p[1] < -42 and p[2] < network.WALL_Y + 0.4 and p[2] > -53 + HALF), "lane goes into the hall at " .. key(p))
 			-- yard fence: north side (-145.6, 22.65) -> (-55.6, 22.65) -> (-34.7, 34.51) -> (1.27, 32.8),
 			-- east side x = 1.27 from y = 8.77 up
 			local fy
@@ -237,8 +238,12 @@ for _, e in ipairs(edges) do
 			check(not inRect(p, -48.6, -42.2, -16, -2.6, HALF), "lane hits the striped island east of the bays at " .. key(p))
 			check(not inRect(p, -2.2, 5.7, -3.3, -2.0, HALF), "lane hits the gatehouse island at " .. key(p))
 			check(not inRect(p, -21.2, -2.8, 2.6, 8.4, HALF), "lane hits the gate's traffic island at " .. key(p))
-			check(not (p[1] > -23 and p[1] < 7.2 and p[2] < -7.8 + HALF), "lane hits the gate building / fence at " .. key(p))
-			if p[2] < network.MOUTH_Y and p[1] < network.bayCenter(network.BAY_COUNT) + network.BAY_DX / 2 then
+			-- gate building between the gates: x -23 .. 7.18, y -52.48 (fence) .. -7.8
+			check(not (p[1] > -23 and p[1] < 7.2 and p[2] < -7.8 + HALF and p[2] > -52.48 - HALF),
+				"lane hits the gate building / fence at " .. key(p))
+			local inBayArea = p[2] < network.MOUTH_Y and p[2] > network.WALL_Y - 2
+				and p[1] > network.BAY_X0 - network.BAY_DX / 2 and p[1] < network.bayCenter(network.BAY_COUNT) + network.BAY_DX / 2
+			if inBayArea then
 				-- inside the bays: stay in this bay's own lane (centre .. centre + IN_OFFSET)
 				local k = math.floor((p[1] - (network.BAY_X0 - network.BAY_DX / 2)) / network.BAY_DX) + 1
 				local xc = network.bayCenter(k)
@@ -248,6 +253,42 @@ for _, e in ipairs(edges) do
 		end
 	end
 end
+-- new lanes keep a truck's width (2.5 m) from the original loop and its lay-by stops, except
+-- where they branch off or merge (they share a node there) and where they cross the lay-bys'
+-- in/out curves (those are crossings, by design)
+do
+	local WIDTH = 2.5
+	local ref = {}
+	for i, oe in ipairs(oedges) do
+		local ix = i - 1
+		if hasMode(oe, "TRUCK") and (ix <= 12 or ix == 14 or ix == 15 or ix == 18 or ix == 19) then
+			for s = 0, 1.0001, 0.02 do ref[#ref + 1] = hermite(oe, s) end
+		end
+	end
+	local origNode = {}
+	for _, oe in ipairs(oedges) do origNode[key(oe.a[1])] = true; origNode[key(oe.b[1])] = true end
+	-- cut points of the original north road are merge points too
+	for _, ne in ipairs(edges) do
+		if hasMode(ne, "TRUCK") and ne.a[1][2] == 19 and ne.b[1][2] == 19 and ne.a[1][1] <= -60 and ne.b[1][1] >= -134 then
+			origNode[key(ne.a[1])] = true; origNode[key(ne.b[1])] = true
+		end
+	end
+	for _, e in ipairs(edges) do
+		if hasMode(e, "TRUCK") and not origKeys[key(e.a[1]) .. ">" .. key(e.b[1])]
+			and not origNode[key(e.a[1])] and not origNode[key(e.b[1])] then
+			for s = 0, 1.0001, 0.05 do
+				local p = hermite(e, s)
+				local best = math.huge
+				for _, r in ipairs(ref) do
+					local d = (p[1] - r[1]) ^ 2 + (p[2] - r[2]) ^ 2
+					if d < best then best = d end
+				end
+				check(math.sqrt(best) >= WIDTH - 1e-6, string.format("lane %.2f m from the original loop at %s", math.sqrt(best), key(p)))
+			end
+		end
+	end
+end
+
 -- the parked leg is long enough for a semi-trailer (front at the stop node)
 check(network.STOP_Y - network.HAIRPIN_Y >= 15.9, "parked leg shorter than a 16 m truck")
 check(network.PARK_HAIRPIN_X - network.PARK_STOP_X >= 15.9, "parking slot leg shorter than a 16 m truck")
@@ -280,6 +321,14 @@ for _, file in ipairs(cons) do
 			check(#r.terminalGroups == #new.terminals, file .. " terminal groups")
 			check(#r.stations == 1 and #r.stations[1].terminals == #new.terminals, file .. " station terminals")
 			check(r.stations[1].pool.moreCapacity == case.cap, file .. " capacity " .. tostring(r.stations[1].pool.moreCapacity) .. " ~= " .. case.cap)
+			-- gate stubs: one-way, north one pointing in, south one pointing out, snapped outside
+			local el = r.edgeLists[1]
+			check(el.params.type == network.GATE_STREET, file .. " gate street type")
+			local ed = el.edges
+			check(#ed == 8 and el.snapNodes[1] == 0 and el.snapNodes[2] == 7, file .. " stub layout / snap nodes")
+			check(ed[1][1][1] == 20.5 and ed[8][1][1] == 20.5, file .. " snap nodes must be the outer ends")
+			for i = 1, 4 do check(ed[i][2][1] < 0 and ed[i][1][2] == -2.65701, file .. " north stub must run inwards") end
+			for i = 5, 8 do check(ed[i][2][1] > 0 and ed[i][1][2] == -58.0858, file .. " south stub must run outwards") end
 		end
 	end)
 	check(ok, file .. " failed to build: " .. tostring(err))

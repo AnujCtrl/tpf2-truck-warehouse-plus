@@ -6,6 +6,7 @@ package.path = "res/scripts/?.lua;" .. package.path
 table.unpack = function(t) return t[1] end
 
 local autoBays = require "truck_warehouse_plus/auto_bays"
+local network = require "truck_warehouse_plus/network"
 
 local failures, checks = 0, 0
 local function check(ok, msg)
@@ -82,9 +83,10 @@ local fakeLines = {
 entities[200] = "group"
 local params = {}
 local fakeTerminals = 15
+local fakeStreet = "standard/country_medium_new.lua"
 _G.api = {
 	type = {
-		ComponentType = { STATION_GROUP = "SG", CONSTRUCTION = "CON", STATION = "ST", LINE = "LINE" },
+		ComponentType = { STATION_GROUP = "SG", CONSTRUCTION = "CON", STATION = "ST", LINE = "LINE", BASE_EDGE_STREET = "BES" },
 		Line = { new = function() return { stops = {} } end },
 		StationTerminal = { new = function() return {} end },
 	},
@@ -92,7 +94,8 @@ _G.api = {
 		entityExists = function(e) return entities[e] ~= nil end,
 		getComponent = function(e, t)
 			if t == "SG" then return ({ [100] = { stations = { 10 } }, [200] = { stations = { 20 } } })[e] end
-			if t == "CON" and e == 50 then return { fileName = "assets/dhl_warenlager.con", params = params } end
+			if t == "CON" and e == 50 then return { fileName = "assets/dhl_warenlager.con", params = params, frozenEdges = { 77 } } end
+			if t == "BES" and e == 77 then return { streetType = fakeStreet } end
 			if t == "ST" and e == 10 then local ts = {} for i = 1, fakeTerminals do ts[i] = {} end return { terminals = ts } end
 			if t == "LINE" then return fakeLines[e] end
 		end,
@@ -167,8 +170,20 @@ local found = upgrade.findOutdated({
 			[52] = { fileName = "station/street/small.con" } })[id]
 	end,
 	terminalCount = function(s) return ({ [10] = 15, [11] = 21, [12] = 3, [13] = 15 })[s] end,
-}, 21)
+}, { terminals = 21, street = "one_way.lua" })
 check(#found == 1 and found[1].id == 50 and found[1].terminals == 15, "only the 15-terminal warehouse is outdated, once")
+-- same terminal count, but still the two-way gate street of 1.3/1.4
+local function streetCase(street)
+	return upgrade.findOutdated({
+		stationConstructions = function() return { [11] = 51 } end,
+		construction = function() return { fileName = "assets/ups_warenlager.con" } end,
+		terminalCount = function() return 21 end,
+		gateStreet = function() return street end,
+	}, { terminals = 21, street = "one_way.lua" })
+end
+check(#streetCase("two_way.lua") == 1, "21 terminals but two-way gates: outdated")
+check(#streetCase("one_way.lua") == 0, "21 terminals and one-way gates: current")
+check(#streetCase(nil) == 0, "street type unknown: judged by terminals only")
 local rp = upgrade.rebuildParams({ seed = 7, twp_storage = 2, nested = { a = 1 } })
 check(rp.seed == nil and rp.twp_storage == 2 and rp.nested.a == 1, "rebuild keeps the params, drops the seed")
 check(next(upgrade.rebuildParams(nil)) == nil, "rebuild with no params")
@@ -200,9 +215,13 @@ local events = {}
 local guiInterface = { sendScriptEvent = function(id, name, param) events[#events + 1] = { id, name, param } end }
 local engineInterface = { upgradeConstruction = function(id, file, prm)
 	upgrades[#upgrades + 1] = { id, file, prm }
-	fakeTerminals = 21
+	fakeStreet = network.GATE_STREET
 end }
 _G.game = { interface = guiInterface }
+api.res = { streetTypeRep = { getName = function(i) return i end } }
+entities[77] = "edge"
+-- a 1.3/1.4 warehouse: already 21 terminals, but still two-way gate stubs
+fakeTerminals = #network.build().terminals
 local strings = (function() dofile("strings.lua") return data().en end)()
 _G._ = function(s) return strings[s] or s end
 params = { twp_storage = 5, seed = 99 }

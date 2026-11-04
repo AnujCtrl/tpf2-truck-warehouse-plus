@@ -95,10 +95,16 @@ local function build(brand, params)
 		result.models[#result.models + 1] = { id = id, transf = IDENTITY }
 	end
 
-	Edges[#Edges + 1] = { { 7.5, -2.65701, 0 }, { 8.0, 0.0, 0.00 } }
-	Edges[#Edges + 1] = { { 15.5, -2.65701, 0 }, { 8.0, 0.0, 0.00 } }
-	Edges[#Edges + 1] = { { 15.5, -2.65701, 0 }, { 5.0, 0.0, 0.00 } }
-	Edges[#Edges + 1] = { { 20.5, -2.65701, 0 }, { 5.0, 0.0, 0.00 } }
+	-- Street stubs at the two gates, one-way two-lane roads since 1.5 (the original had two-way
+	-- roads with one lane each way). One-way lanes run along the edge direction, so the north
+	-- (entry) stub runs from the outside in and the south (exit) stub from the inside out.
+	-- Same positions as the original; the snap node is the outer end of each.
+	-- north gate, in: 20.5 -> 15.5 -> 7.5
+	Edges[#Edges + 1] = { { 20.5, -2.65701, 0 }, { -5.0, 0.0, 0.00 } }
+	Edges[#Edges + 1] = { { 15.5, -2.65701, 0 }, { -5.0, 0.0, 0.00 } }
+	Edges[#Edges + 1] = { { 15.5, -2.65701, 0 }, { -8.0, 0.0, 0.00 } }
+	Edges[#Edges + 1] = { { 7.5, -2.65701, 0 }, { -8.0, 0.0, 0.00 } }
+	-- south gate, out: 7.5 -> 15.5 -> 20.5 (as in the original)
 	Edges[#Edges + 1] = { { 7.5, -58.0858, 0 }, { 8.0, 0.0, 0.00 } }
 	Edges[#Edges + 1] = { { 15.5, -58.0858, 0 }, { 8.0, 0.0, 0.00 } }
 	Edges[#Edges + 1] = { { 15.5, -58.0858, 0 }, { 5.0, 0.0, 0.00 } }
@@ -107,9 +113,9 @@ local function build(brand, params)
 	result.edgeLists = {
 		{
 			type = "STREET",
-			params = { type = "standard/country_medium_new.lua" },
+			params = { type = network.GATE_STREET },
 			edges = Edges,
-			snapNodes = { 3, 7 },
+			snapNodes = { 0, 7 },
 		},
 	}
 

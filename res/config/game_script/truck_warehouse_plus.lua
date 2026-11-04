@@ -128,7 +128,19 @@ local function findOutdated()
 			local st = api.engine.getComponent(stationId, api.type.ComponentType.STATION)
 			return st and st.terminals and #st.terminals or nil
 		end,
-	}, #network.build().terminals)
+		-- the gate stubs are the construction's frozen street edges (calls as Move It makes them)
+		gateStreet = function(conId)
+			local con = api.engine.getComponent(conId, api.type.ComponentType.CONSTRUCTION)
+			if not con or not con.frozenEdges then return nil end
+			for _, e in pairs(con.frozenEdges) do
+				if exists(e) then
+					local se = api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE_STREET)
+					if se then return api.res.streetTypeRep.getName(se.streetType) end
+				end
+			end
+			return nil
+		end,
+	}, { terminals = #network.build().terminals, street = network.GATE_STREET })
 end
 
 -- engine thread (handleEvent): rebuild the warehouses the popup listed
