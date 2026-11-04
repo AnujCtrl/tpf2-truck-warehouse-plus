@@ -1,23 +1,29 @@
 --[[
-Truck warehouse Plus: spread every line's trucks over all loading bays.
+Truck warehouse Plus game script. Two jobs:
+
+1. (engine thread) Spread every line's trucks over all of a warehouse's terminals.
 
 A line stop has one terminal; the other terminals of a station are only used when the stop
 lists them as alternative terminals. Every SCAN_EVERY engine updates (~2 s) this script
 looks for line stops at a truck warehouse whose alternative list is still empty and fills it
 with the warehouse's other terminals (logic in truck_warehouse_plus/auto_bays.lua).
 
-Stops that already have alternative terminals are never touched, so a hand-made choice in
-the line window stays. To keep a warehouse out of this entirely, set "Spread trucks over all
-bays" to No on the warehouse.
+Stops that already have alternative terminals are left alone, except a list that is "every
+other terminal" of a smaller warehouse, which is extended when the warehouse grows. To keep a
+warehouse out of this entirely, set "Spread trucks over all bays" to No on the warehouse.
+No saved state: `sent` only stops a rejected update from being re-sent every scan.
 
-Runs on the engine thread only (update). No saved state: `sent` only stops a rejected update
-from being re-sent every scan during this session.
+2. (GUI thread) At the start of a session, offer to rebuild warehouses that were built with
+an older layout of this mod: existing constructions keep the lanes they were built with until
+they are rebuilt (logic in truck_warehouse_plus/upgrade.lua).
 
 Entity ids are checked with entityExists before every getComponent: the game writes a
 minidump at the moment it throws, even when a pcall catches it.
 --]]
 
 local autoBays = require "truck_warehouse_plus/auto_bays"
+local upgrade = require "truck_warehouse_plus/upgrade"
+local network = require "truck_warehouse_plus/network"
 
 local SCAN_EVERY = 10
 local LOG = "truck_warehouse_plus: "
@@ -95,8 +101,102 @@ local function scan()
 	end
 end
 
+---------------------------------------------------------------------------
+-- GUI thread: rebuild popup
+
+local POPUP_AFTER_FRAMES = 30 -- let the game UI finish loading first
+local guiFrames = 0
+local guiChecked = false
+local guiWork = nil -- runs on the next guiUpdate, outside the button callback
+
+local function findOutdated()
+	return upgrade.findOutdated({
+		stationConstructions = function() return api.engine.system.streetConnectorSystem.getStation2ConstructionMap() end,
+		construction = function(id)
+			if not exists(id) then return nil end
+			return api.engine.getComponent(id, api.type.ComponentType.CONSTRUCTION)
+		end,
+		terminalCount = function(stationId)
+			if not exists(stationId) then return nil end
+			local st = api.engine.getComponent(stationId, api.type.ComponentType.STATION)
+			return st and st.terminals and #st.terminals or nil
+		end,
+	}, #network.build().terminals)
+end
+
+local function rebuild(outdated)
+	local done = 0
+	for _, w in ipairs(outdated) do
+		if exists(w.id) then
+			local con = api.engine.getComponent(w.id, api.type.ComponentType.CONSTRUCTION)
+			if con then
+				local params = upgrade.rebuildParams(con.params)
+				local ok, err = pcall(function() game.interface.upgradeConstruction(w.id, con.fileName, params) end)
+				if ok then
+					done = done + 1
+				else
+					print(LOG .. "rebuilding warehouse " .. tostring(w.id) .. " failed: " .. tostring(err))
+				end
+			end
+		end
+	end
+	print(LOG .. "rebuilt " .. done .. " of " .. #outdated .. " warehouses")
+	return done
+end
+
+local function showPopup(outdated)
+	local expected = #network.build().terminals
+	local layout = api.gui.layout.BoxLayout.new("VERTICAL")
+	local text = api.gui.comp.TextView.new(string.format(_("TWP_POPUP_TEXT"), #outdated, expected))
+	layout:addItem(text)
+	local buttons = api.gui.layout.BoxLayout.new("HORIZONTAL")
+	local yes = api.gui.comp.Button.new(api.gui.comp.TextView.new(_("TWP_POPUP_REBUILD")), false)
+	local no = api.gui.comp.Button.new(api.gui.comp.TextView.new(_("TWP_POPUP_LATER")), false)
+	buttons:addItem(yes)
+	buttons:addItem(no)
+	layout:addItem(buttons)
+	local window = api.gui.comp.Window.new(_("TWP_POPUP_TITLE"), layout)
+	window:addHideOnCloseHandler()
+	pcall(function()
+		local r = api.gui.util.getGameUI():getMainRendererComponent():getContentRect()
+		window:setPosition(math.floor(r.w / 2 - 220), math.floor(r.h / 3))
+	end)
+	window:setVisible(true, false)
+
+	yes:onClick(function()
+		guiWork = function()
+			local done = rebuild(outdated)
+			text:setText(string.format(_("TWP_POPUP_DONE"), done, #outdated))
+			yes:setVisible(false, false)
+		end
+	end)
+	no:onClick(function() window:close() end)
+end
+
+local function guiCheck()
+	if guiWork then
+		local work = guiWork
+		guiWork = nil
+		local ok, err = pcall(work)
+		if not ok then print(LOG .. "rebuild failed: " .. tostring(err)) end
+	end
+	if guiChecked then return end
+	guiFrames = guiFrames + 1
+	if guiFrames < POPUP_AFTER_FRAMES then return end
+	guiChecked = true
+	local ok, outdated = pcall(findOutdated)
+	if not ok then
+		print(LOG .. "layout check failed: " .. tostring(outdated))
+	elseif #outdated > 0 then
+		print(LOG .. #outdated .. " warehouse(s) built with an older layout")
+		local shown, err = pcall(showPopup, outdated)
+		if not shown then print(LOG .. "popup failed: " .. tostring(err)) end
+	end
+end
+
 function data()
 	return {
+		guiUpdate = guiCheck,
 		update = function()
 			tick = tick + 1
 			if tick < SCAN_EVERY then return end

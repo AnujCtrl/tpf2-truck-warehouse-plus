@@ -30,8 +30,34 @@ M.IN_OFFSET = 1.5 -- entry leg runs this far east of the bay centre
 M.HAIRPIN_Y = -18.0 -- where the in-bay U-turn starts (dips 1.5 m further, to -19.5)
 M.HAIRPIN_K = 6.0 -- tangent length of the U-turn (dip = K / 4)
 M.STOP_Y = -2.0 -- vehicle node: cab at the bay mouth, trailer back against the door
-M.EXIT_Y = M.STOP_Y + M.EXIT_R -- eastbound exit lane along the bay mouths
+M.EXIT_Y = M.STOP_Y + M.EXIT_R -- exit lanes along the bay mouths
 M.GATE_OUT = { 15.5, -4.65701 } -- east-bound lane of the north gate's street stub (centre -2.657 - 2)
+-- TpF2 routes by the fastest planned route, not by queues, so exits are split by bay instead
+-- of offering a choice: bays 1..WEST_EXIT_BAYS leave west round the loop (south gate), the
+-- rest east through the north gate. With the parking slots on the loop too, that puts 10
+-- terminals on each gate's outbound lane (+1 on the south one).
+M.WEST_EXIT_BAYS = 3
+M.WEST_EXIT_X = -110.375 -- where the westbound exit lane turns north to the loop
+M.NORTH_JOIN_X = -120.375 -- ... and joins the loop's north road
+M.PARK_MERGE_X = -64.0 -- where the parking slots' exit joins the north road
+
+-- Truck parking slots inside the north gate (painted in dhl_linien.msh: stripes at
+-- y = 14.1 + 3.65 i, x = -17.33 .. 0.67; the first slot is bounded by the gate island).
+M.PARK_COUNT = 6
+M.PARK_C1 = 12.275 -- centre line of the slot next to the gate island
+M.PARK_PITCH = 3.65
+M.PARK_X0 = -17.33 -- open (west) end of the slots
+M.PARK_X1 = 0.67 -- closed (east) end, against the yard fence at x = 1.27
+M.PARK_OFFSET = 1.5 -- in-lane runs this far south of the out-lane (both inside the slot)
+M.PARK_HAIRPIN_X = -1.75 -- U-turn start (bulges K/4 = 1.5 m further east)
+M.PARK_STOP_X = -17.75 -- vehicle node: cab at the slot mouth
+-- a barrier bar (dhl_gelaende, ~2.4 m up) spans x = -2.55, y = 2.5 .. 13.8 across the end of the
+-- first slot, so that slot turns before it and its parked leg is 14 m instead of 16
+M.BAR = { x = -2.55, y0 = 2.47, y1 = 13.77 }
+M.PARK_FIRST_HAIRPIN_X = -5.5
+M.PARK_FIRST_STOP_X = -19.5
+M.FEEDER_X = -24.0 -- northbound lane past the west end of the gate island
+M.COLLECTOR_Y = 21.25 -- westbound lane collecting the slots' exits
 M.FLOOR_Z = 1.0
 M.CORRIDOR_Y = -23.0 -- cargo corridor inside the hall, just behind the doors
 M.DOOR_Y = -20.5
@@ -119,7 +145,8 @@ end
 
 ---------------------------------------------------------------------------
 -- original network (unchanged geometry, from the 2021 dhl_path.mdl by RPGFabi /
--- elektronikfreak), edge for edge.
+-- elektronikfreak), edge for edge, except that the north road is cut in three where new
+-- exits join it.
 
 local function originalTruckLanes(b, truck)
 	local E = function(x0, y0, tx0, ty0, x1, y1, tx1, ty1)
@@ -131,7 +158,12 @@ local function originalTruckLanes(b, truck)
 	E(15.5, -0.65701, -10.9, 0, 4.6, 0, -10.9, 0)
 	E(4.6, 0, -24.6, 0, -20, 0, -24.6, 0)
 	E(-20, 0, -40, 0, -60, 19, -40, 0)
-	E(-60, 19, -74, 0, -134, 19, -74, 0)
+	-- north road: one straight edge in the original, cut where the parking exit and the
+	-- west bays' exit join it (same line, tangents scaled to each piece)
+	local px, nx = M.PARK_MERGE_X, M.NORTH_JOIN_X
+	E(-60, 19, px + 60, 0, px, 19, px + 60, 0)
+	E(px, 19, nx - px, 0, nx, 19, nx - px, 0)
+	E(nx, 19, -134 - nx, 0, -134, 19, -134 - nx, 0)
 	E(-134, 19, -16, 0, -144, 10, 0, -7)
 	E(-144, 10, 0, -60, -144, -50, 0, -60)
 	E(-144, -50, 0, -25, -133, -61, 7, 0)
@@ -183,13 +215,15 @@ end
 ---------------------------------------------------------------------------
 -- new: one terminal per painted loading bay
 
--- Bay traffic has its own way in and out, separate from the loop:
+-- Bay traffic:
 --   in:  north gate -> westbound aisle -> left turn into the bay's east half -> U-turn at the
 --        door -> stop at the bay mouth facing out
---   out: right turn onto an eastbound exit lane along the bay mouths -> out through the
---        north gate's (previously unused) outbound lane
--- The loop round the building is left to the two lay-by terminals. (Version 1.0 sent bay
--- trucks out round the whole loop: ~350 m of single lane shared by every truck, which jammed.)
+--   out, bays 1..WEST_EXIT_BAYS: left turn onto a westbound exit lane along the bay mouths
+--        -> north at the west end -> joins the loop's north road -> south gate
+--   out, the other bays: right turn onto an eastbound exit lane along the bay mouths -> out
+--        through the north gate's outbound lane
+-- (1.0 sent every bay round the loop, 1.2 every bay through the north gate; each jammed its
+-- single outbound lane, so 1.3 splits them.)
 local function dockTruckLanes(b, truck, orig)
 	local A, R, q = M.AISLE_Y, M.TURN_R, quarter(M.TURN_R)
 	local XR, XQ, XY = M.EXIT_R, quarter(M.EXIT_R), M.EXIT_Y
@@ -223,12 +257,30 @@ local function dockTruckLanes(b, truck, orig)
 		b.edge(truck, P(xin, M.HAIRPIN_Y), T(0, -M.HAIRPIN_K), P(xc, M.HAIRPIN_Y), T(0, M.HAIRPIN_K))
 		-- pull forward to the bay mouth: the trailer ends up backed onto the door
 		b.straight(truck, P(xc, M.HAIRPIN_Y), P(xc, M.STOP_Y))
-		-- right turn onto the exit lane
-		bay.leave = b.edge(truck, P(xc, M.STOP_Y), T(0, XQ), P(xc + XR, XY), T(XQ, 0))
+		if k <= M.WEST_EXIT_BAYS then
+			-- left turn onto the westbound exit lane
+			bay.leave = b.edge(truck, P(xc, M.STOP_Y), T(0, XQ), P(xc - XR, XY), T(-XQ, 0))
+		else
+			-- right turn onto the eastbound exit lane
+			bay.leave = b.edge(truck, P(xc, M.STOP_Y), T(0, XQ), P(xc + XR, XY), T(XQ, 0))
+		end
 	end
 
-	-- exit lane: east along the bay mouths, joined by every bay ...
-	for k = 1, M.BAY_COUNT - 1 do
+	-- west exit: along the bay mouths to the west end, then north onto the loop's north road
+	-- round the north-east corner of the west annex
+	local W = M.WEST_EXIT_BAYS
+	for k = W, 2, -1 do
+		b.straight(truck, P(bays[k].xc - XR, XY), P(bays[k - 1].xc - XR, XY))
+	end
+	local x0, q4 = M.WEST_EXIT_X, quarter(4)
+	b.straight(truck, P(bays[1].xc - XR, XY), P(x0, XY))
+	b.edge(truck, P(x0, XY), T(-q4, 0), P(x0 - 4, XY + 4), T(0, q4)) -- right turn, r = 4
+	b.straight(truck, P(x0 - 4, XY + 4), P(x0 - 4, 13))
+	assert(math.abs((x0 - 4 - R) - M.NORTH_JOIN_X) < 1e-9, "west exit must meet the cut in the north road")
+	b.edge(truck, P(x0 - 4, 13), T(0, q), P(M.NORTH_JOIN_X, 19), T(-q, 0)) -- left turn, r = 6
+
+	-- east exit lane: east along the bay mouths, joined by the other bays ...
+	for k = W + 1, M.BAY_COUNT - 1 do
 		b.straight(truck, P(bays[k].xc + XR, XY), P(bays[k + 1].xc + XR, XY))
 	end
 	local exitBendX = -42.0 -- clear of the striped island east of the bays
@@ -257,6 +309,84 @@ local function dockCargoLanes(b, cargo, orig, bays)
 end
 
 ---------------------------------------------------------------------------
+-- new: one terminal per painted truck parking slot inside the north gate
+
+function M.parkCenter(k)
+	return M.PARK_C1 + (k - 1) * M.PARK_PITCH
+end
+
+-- in:  north gate -> right turn past the west end of the gate island -> north along the
+--      feeder -> right turn into the slot -> U-turn at the fence end -> stop at the slot mouth
+-- out: west across the feeder -> onto a westbound collector -> joins the loop's north road
+--      -> south gate (going out through the north gate would cross its incoming lane)
+local function parkingTruckLanes(b, truck)
+	local function P(x, y) return { x, y, 0 } end
+	local function T(x, y) return { x, y, 0 } end
+	local fx, er = M.FEEDER_X, 3.0
+	local slots = {}
+	for k = 1, M.PARK_COUNT do
+		local c = M.parkCenter(k)
+		slots[k] = { c = c, yin = c - M.PARK_OFFSET / 2, yout = c + M.PARK_OFFSET / 2,
+			hx = k == 1 and M.PARK_FIRST_HAIRPIN_X or M.PARK_HAIRPIN_X,
+			sx = k == 1 and M.PARK_FIRST_STOP_X or M.PARK_STOP_X }
+	end
+
+	-- feeder: off the loop's junction at (-20, 0), round the gate island, north past every slot
+	local q4 = quarter(4)
+	b.edge(truck, P(-20, 0), T(-q4, 0), P(fx, 4), T(0, q4)) -- right turn, r = 4
+	local y = 4
+	for k = 1, M.PARK_COUNT do
+		local at = slots[k].yin - er
+		b.straight(truck, P(fx, y), P(fx, at))
+		y = at
+		-- right turn into the slot, then east along its south half
+		local q3 = quarter(er)
+		b.edge(truck, P(fx, at), T(0, q3), P(fx + er, slots[k].yin), T(q3, 0))
+		local s = slots[k]
+		b.straight(truck, P(fx + er, s.yin), P(s.hx, s.yin))
+		-- U-turn at the fence end (anticlockwise: east -> north -> west)
+		b.edge(truck, P(s.hx, s.yin), T(6, 0), P(s.hx, s.yout), T(-6, 0))
+		b.straight(truck, P(s.hx, s.yout), P(s.sx, s.yout))
+	end
+
+	-- exits: each slot curves onto the collector; slots nearest the collector join first so
+	-- the curves never cross each other
+	local order = {}
+	for k = 1, M.PARK_COUNT do order[k] = k end
+	table.sort(order, function(a, c)
+		return math.abs(slots[a].yout - M.COLLECTOR_Y) < math.abs(slots[c].yout - M.COLLECTOR_Y)
+	end)
+	local cy, mx = M.COLLECTOR_Y, -28.0
+	local prev
+	for _, k in ipairs(order) do
+		local s = slots[k]
+		local dx = mx - s.sx
+		s.leave = b.edge(truck, P(s.sx, s.yout), T(dx, 0), P(mx, cy), T(dx, 0))
+		if prev then b.straight(truck, P(prev, cy), P(mx, cy)) end
+		prev = mx
+		mx = mx - 4
+	end
+	local endX = -52.0
+	b.straight(truck, P(prev, cy), P(endX, cy))
+	local px = M.PARK_MERGE_X
+	b.edge(truck, P(endX, cy), T(px - endX, 0), P(px, 19), T(px - endX, 0))
+	return slots
+end
+
+local function parkingCargoLanes(b, cargo, oc, slots)
+	-- cargo waits along each slot; a lane up the slot mouths links them, and runs to the
+	-- north-gate sidewalk end of the original cargo network
+	local x0, x1 = -16.0, -3.0
+	for k = 1, M.PARK_COUNT do
+		slots[k].cargo = b.straight(cargo, { x0, slots[k].c, 0 }, { k == 1 and -6.0 or x1, slots[k].c, 0 })
+	end
+	for k = 1, M.PARK_COUNT - 1 do
+		b.straight(cargo, { x0, slots[k].c, 0 }, { x0, slots[k + 1].c, 0 })
+	end
+	b.straight(cargo, { x0, slots[1].c, 0 }, { 7.5, -8.65701, 0 })
+end
+
+---------------------------------------------------------------------------
 
 function M.build()
 	local b = newBuilder()
@@ -265,8 +395,10 @@ function M.build()
 
 	local ot = originalTruckLanes(b, truck)
 	local bays = dockTruckLanes(b, truck, ot)
+	local slots = parkingTruckLanes(b, truck)
 	local oc = originalCargoLanes(b, cargo)
 	dockCargoLanes(b, cargo, oc, bays)
+	parkingCargoLanes(b, cargo, oc, slots)
 
 	local terminals = {}
 	-- terminals 1 and 2: the original lay-bys, same order as before so existing lines keep them
@@ -283,6 +415,16 @@ function M.build()
 			vehicleNode = { bay.leave, 0 },
 			personEdges = { bay.dock },
 			personNodes = { { bay.dock, 0 }, { bay.dock, 1 } },
+		}
+	end
+	-- terminals 16..21: parking slots, from the gate island outwards (appended, so the
+	-- numbers of the terminals above never change)
+	for k = 1, M.PARK_COUNT do
+		local s = slots[k]
+		terminals[#terminals + 1] = {
+			vehicleNode = { s.leave, 0 },
+			personEdges = { s.cargo },
+			personNodes = { { s.cargo, 0 }, { s.cargo, 1 } },
 		}
 	end
 

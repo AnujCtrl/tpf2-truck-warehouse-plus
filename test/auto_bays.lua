@@ -139,5 +139,89 @@ for _ = 1, 30 do gs.update() end
 print = realPrint
 check(#commands == 0, "auto bays off on the warehouse: no update")
 
+-- 5. a warehouse that grew (15 -> 21): "all other terminals" lists are extended, others kept
+local function alts(list)
+	local out = {}
+	for i, t in ipairs(list) do out[i] = { station = 0, terminal = t } end
+	return out
+end
+local function grown(group, station) if group == 100 then return 21 end end
+local old15 = autoBays.alternativesFor(4, 15)
+local p = autoBays.planLine({ stops = { stop(100, 4, alts(old15)) } }, grown)
+check(p and p[1] and #p[1] == 20, "old full list (14) extended to 20 alternatives")
+check(p and p[1] and same(p[1], autoBays.alternativesFor(4, 21)), "extended list = bays, parking, lay-bys")
+check(autoBays.planLine({ stops = { stop(100, 4, alts({ 3, 5 })) } }, grown) == nil, "hand-picked subset kept")
+check(autoBays.planLine({ stops = { stop(100, 4, alts(autoBays.alternativesFor(4, 21))) } }, grown) == nil,
+	"already complete list kept (no endless re-sending)")
+local other = alts(old15); other[3].station = 1
+check(autoBays.planLine({ stops = { stop(100, 4, other) } }, grown) == nil, "list naming another station kept")
+check(autoBays.planLine({ stops = { stop(100, 20, alts(old15)) } }, grown) == nil, "primary outside the old range: kept")
+
+-- 6. finding warehouses with an older layout
+local upgrade = require "truck_warehouse_plus/upgrade"
+local found = upgrade.findOutdated({
+	stationConstructions = function() return { [10] = 50, [11] = 51, [12] = 52, [13] = 50 } end,
+	construction = function(id)
+		return ({ [50] = { fileName = "assets/dhl_warenlager.con" }, [51] = { fileName = "assets/ups_warenlager.con" },
+			[52] = { fileName = "station/street/small.con" } })[id]
+	end,
+	terminalCount = function(s) return ({ [10] = 15, [11] = 21, [12] = 3, [13] = 15 })[s] end,
+}, 21)
+check(#found == 1 and found[1].id == 50 and found[1].terminals == 15, "only the 15-terminal warehouse is outdated, once")
+local rp = upgrade.rebuildParams({ seed = 7, twp_storage = 2, nested = { a = 1 } })
+check(rp.seed == nil and rp.twp_storage == 2 and rp.nested.a == 1, "rebuild keeps the params, drops the seed")
+check(next(upgrade.rebuildParams(nil)) == nil, "rebuild with no params")
+
+-- 7. the popup, driven through a fake GUI
+local clicks, texts, upgrades, windows = {}, {}, {}, 0
+local function widget(kind)
+	local w = { kind = kind }
+	return setmetatable(w, { __index = function(_, name)
+		return function(self, a)
+			if name == "onClick" then clicks[self] = a end
+			if name == "setText" then texts[#texts + 1] = a end
+		end
+	end })
+end
+api.gui = {
+	layout = { BoxLayout = { new = function() return widget("box") end } },
+	comp = {
+		TextView = { new = function(t) texts[#texts + 1] = t return widget("text") end },
+		Button = { new = function() return widget("button") end },
+		Window = { new = function() windows = windows + 1 return widget("window") end },
+	},
+	util = { getGameUI = function() error("no renderer in the fake") end },
+}
+api.engine.system.streetConnectorSystem.getStation2ConstructionMap = function() return { [10] = 50 } end
+_G.game = { interface = { upgradeConstruction = function(id, file, prm) upgrades[#upgrades + 1] = { id, file, prm } end } }
+local strings = (function() dofile("strings.lua") return data().en end)()
+_G._ = function(s) return strings[s] or s end
+params = { twp_storage = 5, seed = 99 }
+printed = {}
+print = function(s) printed[#printed + 1] = s end
+script()
+gs = data()
+for _ = 1, 29 do gs.guiUpdate() end
+local before = windows
+gs.guiUpdate()
+check(before == 0 and windows == 1, "popup appears once, after the UI has settled")
+local buttons = {}
+for b in pairs(clicks) do buttons[#buttons + 1] = b end
+check(#buttons == 2, "popup has two buttons")
+for _, b in ipairs(buttons) do
+	clicks[b]() -- "Not now" only closes; "Rebuild now" queues the work
+end
+check(#upgrades == 0, "no rebuild inside the click handler itself")
+gs.guiUpdate()
+print = realPrint
+check(#upgrades == 1 and upgrades[1][1] == 50 and upgrades[1][2] == "assets/dhl_warenlager.con", "warehouse 50 rebuilt")
+check(upgrades[1] and upgrades[1][3].twp_storage == 5 and upgrades[1][3].seed == nil, "rebuilt with its own settings, no seed")
+local sawDone = false
+for _, t in ipairs(texts) do if tostring(t):find("Rebuilt 1 of 1") then sawDone = true end end
+check(sawDone, "popup reports the result")
+for _ = 1, 50 do gs.guiUpdate() end
+check(windows == 1, "popup is not shown again in the same session")
+for _, s in ipairs(printed) do check(not s:find("failed"), "script error: " .. s) end
+
 print(string.format("%d checks, %d failures", checks, failures))
 os.exit(failures == 0 and 0 or 1)

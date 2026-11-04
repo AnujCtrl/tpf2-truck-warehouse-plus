@@ -67,11 +67,33 @@ f()
 local orig = data().metadata.transportNetworkProvider
 local oedges, onodes = edgesOf(orig)
 
--- 1. every original edge survives, unchanged
+-- 1. every original edge survives, unchanged; the straight north road may be cut into
+-- collinear pieces that still run exactly from x = -60 to x = -134 at y = 19
+local function northRoadIntact()
+	local from, seen = {}, 0
+	for _, ne in ipairs(edges) do
+		if hasMode(ne, "TRUCK") and ne.a[1][2] == 19 and ne.b[1][2] == 19 and ne.a[2][2] == 0 and ne.b[2][2] == 0
+			and ne.a[1][1] <= -60 and ne.b[1][1] >= -134 and ne.b[1][1] < ne.a[1][1] then
+			from[ne.a[1][1]] = ne
+			seen = seen + 1
+		end
+	end
+	local x, pieces = -60, 0
+	while from[x] do
+		local ne = from[x]
+		local len = ne.a[1][1] - ne.b[1][1]
+		if not (near(ne.a[2][1], -len) and near(ne.b[2][1], -len)) then return false end
+		x, pieces = ne.b[1][1], pieces + 1
+	end
+	return x == -134 and pieces == seen
+end
 for i, oe in ipairs(oedges) do
 	local found = false
 	for _, ne in ipairs(edges) do
 		if sameNode(oe.a, ne.a) and sameNode(oe.b, ne.b) and hasMode(ne, oe.modes[1]) then found = true break end
+	end
+	if not found and key(oe.a[1]) == key({ -60, 19, 0 }) and key(oe.b[1]) == key({ -134, 19, 0 }) then
+		found = northRoadIntact()
 	end
 	check(found, "original edge " .. (i - 1) .. " missing: " .. key(oe.a[1]) .. " -> " .. key(oe.b[1]))
 end
@@ -88,7 +110,8 @@ local function personSet(tnp, t)
 	table.sort(s)
 	return table.concat(s, "|")
 end
-check(#new.terminals == 2 + network.BAY_COUNT, "expected 15 terminals, got " .. #new.terminals)
+local FIRST_PARK = 3 + network.BAY_COUNT
+check(#new.terminals == 2 + network.BAY_COUNT + network.PARK_COUNT, "expected 21 terminals, got " .. #new.terminals)
 for t = 1, 2 do
 	check(vehiclePos(new, new.terminals[t]) == vehiclePos(orig, orig.terminals[t]), "terminal " .. t .. " vehicle node moved")
 	check(personSet(new, new.terminals[t]) == personSet(orig, orig.terminals[t]), "terminal " .. t .. " person edges changed")
@@ -140,9 +163,14 @@ for i, t in ipairs(new.terminals) do
 	local after = reach(vp)
 	if i <= 2 then
 		check(after[EXIT], "lay-by " .. i .. " cannot reach the south exit")
-	else
+	elseif i <= 2 + network.WEST_EXIT_BAYS then
+		check(after[EXIT] and not after[EXIT_NORTH], "west bay terminal " .. i .. " must leave by the south gate only")
+		check(not after[LOOP_NORTH], "west bay terminal " .. i .. " drives the whole loop instead of joining at the west end")
+	elseif i < FIRST_PARK then
 		check(after[EXIT_NORTH], "bay terminal " .. i .. " cannot reach the north gate exit")
 		check(not after[LOOP_NORTH] and not after[EXIT], "bay terminal " .. i .. " can still drive into the loop")
+	else
+		check(after[EXIT] and not after[EXIT_NORTH], "parking terminal " .. i .. " must leave by the south gate only")
 	end
 end
 for n, succ in pairs(out) do
@@ -190,7 +218,22 @@ for _, e in ipairs(edges) do
 			check(not inRect(p, -104, -57, 9.9, 12.4, HALF), "lane hits the traffic island at " .. key(p))
 			check(not inRect(p, -135, -119, -53, 12, HALF), "lane hits the west annex at " .. key(p))
 			check(not (p[1] > -120 and p[1] < -42 and p[2] < network.WALL_Y + 0.4), "lane goes through the dock wall at " .. key(p))
-			check(p[2] < 22.6542 - HALF, "lane hits the north fence at " .. key(p))
+			-- yard fence: north side (-145.6, 22.65) -> (-55.6, 22.65) -> (-34.7, 34.51) -> (1.27, 32.8),
+			-- east side x = 1.27 from y = 8.77 up
+			local fy
+			if p[1] <= -55.6 then fy = 22.6542
+			elseif p[1] <= -34.7 then fy = 22.6542 + (p[1] + 55.6) * (34.5142 - 22.6542) / (55.6 - 34.7)
+			else fy = 34.5142 + (p[1] + 34.7) * (32.8 - 34.5142) / (34.7 + 1.27215) end
+			check(p[2] < fy - HALF, "lane hits the north fence at " .. key(p))
+			check(not (p[2] > 8.77 and p[1] > 1.27215 - HALF), "lane hits the east fence at " .. key(p))
+			check(not inRect(p, network.BAR.x, network.BAR.x, network.BAR.y0, network.BAR.y1, HALF), "lane runs through the barrier bar at " .. key(p))
+			if p[1] >= network.PARK_X0 and p[1] <= network.PARK_X1 and p[2] > 9 then
+				-- inside the parking slots: stay in this slot (its painted stripes)
+				local k = math.floor((p[2] - (network.PARK_C1 - network.PARK_PITCH / 2)) / network.PARK_PITCH) + 1
+				check(k >= 1 and k <= network.PARK_COUNT, "parking lane outside the painted slots at " .. key(p))
+				local c = network.parkCenter(k)
+				check(math.abs(p[2] - c) <= network.PARK_OFFSET / 2 + 0.01, "parking lane leaves its slot at " .. key(p))
+			end
 			check(not inRect(p, -48.6, -42.2, -16, -2.6, HALF), "lane hits the striped island east of the bays at " .. key(p))
 			check(not inRect(p, -2.2, 5.7, -3.3, -2.0, HALF), "lane hits the gatehouse island at " .. key(p))
 			check(not inRect(p, -21.2, -2.8, 2.6, 8.4, HALF), "lane hits the gate's traffic island at " .. key(p))
@@ -207,6 +250,8 @@ for _, e in ipairs(edges) do
 end
 -- the parked leg is long enough for a semi-trailer (front at the stop node)
 check(network.STOP_Y - network.HAIRPIN_Y >= 15.9, "parked leg shorter than a 16 m truck")
+check(network.PARK_HAIRPIN_X - network.PARK_STOP_X >= 15.9, "parking slot leg shorter than a 16 m truck")
+check(network.PARK_FIRST_HAIRPIN_X - network.PARK_FIRST_STOP_X >= 14.0, "first parking slot leg shorter than 14 m")
 
 -- 7. constructions
 local consDir = "res/construction/assets/"

@@ -58,18 +58,34 @@ local function signature(line)
 	return table.concat(parts, ";")
 end
 
--- Returns { [stopIndex] = { terminal, ... } } for the stops of `line` that need alternatives,
--- or nil when nothing needs doing.
+-- True when `alts` is "every other terminal" of a smaller warehouse (0 .. #alts), on this
+-- station: what this script filled in before the warehouse grew, or a player's "all of them".
+-- Such a list is extended when the warehouse gains terminals; any other choice is left alone.
+local function coversSmallerWarehouse(stop, n)
+	local a = count(stop.alternativeTerminals)
+	if a == 0 or a + 1 >= n then return false end
+	local seen = {}
+	for i = 1, a do
+		local alt = stop.alternativeTerminals[i]
+		local t = alt and alt.terminal
+		if type(t) ~= "number" or alt.station ~= stop.station or t == stop.terminal or t < 0 or t > a or seen[t] then
+			return false
+		end
+		seen[t] = true
+	end
+	return stop.terminal >= 0 and stop.terminal <= a
+end
+
+-- Returns { [stopIndex] = { terminal, ... } } for the stops of `line` that need alternatives
+-- (none yet, or all of a smaller warehouse), or nil when nothing needs doing.
 function M.planLine(line, warehouseTerminals)
 	local plan
 	for i = 1, count(line.stops) do
 		local stop = line.stops[i]
-		if count(stop.alternativeTerminals) == 0 then
-			local n = warehouseTerminals(stop.stationGroup, stop.station)
-			if n and n > 1 then
-				plan = plan or {}
-				plan[i] = M.alternativesFor(stop.terminal, n)
-			end
+		local n = warehouseTerminals(stop.stationGroup, stop.station)
+		if n and n > 1 and (count(stop.alternativeTerminals) == 0 or coversSmallerWarehouse(stop, n)) then
+			plan = plan or {}
+			plan[i] = M.alternativesFor(stop.terminal, n)
 		end
 	end
 	return plan
