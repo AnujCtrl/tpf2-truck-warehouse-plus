@@ -195,9 +195,9 @@ local function laneCase(lanes)
 		laneCount = function() return lanes end,
 	}, { terminals = 21, street = "one_way.lua", lanes = 280 })
 end
-check(#laneCase(270) == 1, "fewer lanes than the current layout: outdated")
+check(#laneCase(269) == 1, "fewer lanes than the current layout: outdated")
 check(#laneCase(280) == 0, "same lanes: current")
-check(#laneCase(300) == 0, "more lanes (something the game adds): never a rebuild loop")
+check(#laneCase(299) == 1, "more lanes (a 1.6-1.8 warehouse with crossovers): outdated")
 check(#laneCase(nil) == 0, "lanes unknown: judged by the rest")
 local _, stats = laneCase(270)
 check(stats["270"] == 1, "lane counts are reported for the log")

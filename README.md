@@ -36,14 +36,9 @@ lanes from where the bays join it to the south gate. Each stream keeps its own l
 
 TpF2 routes trucks by the fastest *planned* route, not by queues, and model lanes have no lane
 changing, so two parallel lanes are only both used when different traffic is assigned to each; hence
-the split above. Which gate lane a truck actually arrives in is up to your roads, though: in 1.5 every
-truck turning in from the main road landed in the north lane and the bays' exit lane fed straight back
-into the entrance, so trucks left and came back in. Since 1.6 an **X of crossovers just inside each
-gate** lets either lane reach every terminal and either exit lane. In 1.6/1.7 they were only ~1 m
-longer than the direct lane, which made the route planner send every truck through one street lane
-and swap inside, so both gates were effectively single-lane again. Since 1.8 the crossovers are
-**slow lanes** (speed limit 5, stock station lanes use 20): a truck picks its own lane at the junction
-whenever your roads allow it and only crosses over when they don't.
+the split above. Trucks choose their gate lane at your junction by destination.
+(1.6-1.8 added crossovers inside the gates so either lane could reach everything; in game that made
+the route planner push every truck through one street lane, so 1.9 went back to this layout.)
 
 **Your roads must match:** connect the north gate with a road that runs one-way *into* the gate and the
 south gate with a road that runs one-way *out of* it (e.g. *Two-lane one-way road*). A two-way road

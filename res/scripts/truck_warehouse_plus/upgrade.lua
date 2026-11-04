@@ -7,8 +7,8 @@
 --
 -- Fingerprint: the station's terminal count (2 -> 15 -> 21), the street type of the gate
 -- stubs (two-way until 1.4, one-way since 1.5) and the number of lanes in its transport
--- network. Lanes only count when there are fewer than the current layout has: every older
--- layout has fewer, and lanes the game might add on its own must not trigger a rebuild loop.
+-- network. In game the warehouse reports exactly the layout's lane count (1.5 warehouses: 269),
+-- so any difference means an older (or newer) layout: 1.9 has fewer lanes than 1.6-1.8.
 --
 -- adapter = {
 --   stationConstructions() -> pairs of stationId -> constructionId
@@ -41,8 +41,8 @@ function M.findOutdated(adapter, expected)
 				local lanes = adapter.laneCount and adapter.laneCount(conId) or nil
 				local lk = tostring(lanes)
 				laneStats[lk] = (laneStats[lk] or 0) + 1
-				local fewerLanes = type(lanes) == "number" and expected.lanes ~= nil and lanes < expected.lanes
-				if wrongCount or wrongStreet or fewerLanes then
+				local wrongLanes = type(lanes) == "number" and expected.lanes ~= nil and lanes ~= expected.lanes
+				if wrongCount or wrongStreet or wrongLanes then
 					out[#out + 1] = { id = conId, fileName = con.fileName, terminals = n, street = street, lanes = lanes }
 				end
 			end

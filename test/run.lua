@@ -143,9 +143,9 @@ for i, t in ipairs(new.terminals) do
 end
 for _, l in ipairs(new.laneLists) do check(#l.nodes % 2 == 0, "odd node count in a lane list") end
 
--- 4. trucks: every terminal reachable from both gate lanes and able to reach both exit lanes,
--- each stream's own lane the shorter way in, and no dead ends anywhere (one-way lanes, joined
--- by position)
+-- 4. trucks: each stream keeps its own gate lane end to end (bays: the north gate's south lane
+-- in, the south gate's inner lane out; lay-bys and parking: north lane in, outer lane out), and
+-- no dead ends anywhere (one-way lanes, joined by position)
 local out, inn = {}, {}
 for _, e in ipairs(edges) do
 	if hasMode(e, "TRUCK") then
@@ -173,102 +173,23 @@ local function reach(from)
 	end
 	return seen
 end
--- shortest driving distance along the lanes (edge length sampled from the curve)
-local wout = {}
-for _, e in ipairs(edges) do
-	if hasMode(e, "TRUCK") then
-		local len, prev = 0, hermite(e, 0)
-		for k = 1, 50 do
-			local q = hermite(e, k / 50)
-			len = len + math.sqrt((q[1] - prev[1]) ^ 2 + (q[2] - prev[2]) ^ 2)
-			prev = q
-		end
-		local a = key(e.a[1])
-		wout[a] = wout[a] or {}
-		table.insert(wout[a], { key(e.b[1]), len })
-	end
-end
-local function dist(from)
-	local d, done = { [from] = 0 }, {}
-	while true do
-		local best, bk = math.huge, nil
-		for k, v in pairs(d) do if not done[k] and v < best then best, bk = v, k end end
-		if not bk then return d end
-		done[bk] = true
-		for _, x in ipairs(wout[bk] or {}) do
-			local nd = best + x[2]
-			if not d[x[1]] or nd < d[x[1]] then d[x[1]] = nd end
-		end
-	end
-end
-local fromN, fromS = dist(IN_N), dist(IN_S)
--- the same with lane speed: crossovers are slow lanes, so the direct lane must win by far more
--- than the few metres a street turn into the other lane can cost (in metres at stock station
--- lane speed, 20)
-local NORMAL = 20
-local function tdist(from)
-	local w = {}
-	for _, e in ipairs(edges) do
-		if hasMode(e, "TRUCK") then
-			local len, prev = 0, hermite(e, 0)
-			for k = 1, 50 do
-				local q = hermite(e, k / 50)
-				len = len + math.sqrt((q[1] - prev[1]) ^ 2 + (q[2] - prev[2]) ^ 2)
-				prev = q
-			end
-			local a = key(e.a[1])
-			w[a] = w[a] or {}
-			table.insert(w[a], { key(e.b[1]), len * NORMAL / (e.speed or NORMAL) })
-		end
-	end
-	local d, done = { [from] = 0 }, {}
-	while true do
-		local best, bk = math.huge, nil
-		for k, v in pairs(d) do if not done[k] and v < best then best, bk = v, k end end
-		if not bk then return d end
-		done[bk] = true
-		for _, x in ipairs(w[bk] or {}) do
-			local nd = best + x[2]
-			if not d[x[1]] or nd < d[x[1]] then d[x[1]] = nd end
-		end
-	end
-end
-local tN, tS = tdist(IN_N), tdist(IN_S)
-local MARGIN = 25
-for i, t in ipairs(new.terminals) do
-	local vp = key(nodes[t.vehicleNode + 1].node[1])
-	if tN[vp] and tS[vp] then
-		local own, other = tN[vp], tS[vp]
-		if i >= 3 and i < FIRST_PARK then own, other = tS[vp], tN[vp] end
-		check(other - own >= MARGIN, string.format("terminal %d: own gate lane wins by only %.1f m-equivalent", i, other - own))
-		if os.getenv("TWP_SHOW_DIST") then print("margin", i, other - own) end
-	end
-end
--- crossovers are the only slow lanes, and there are exactly four of them (two halves each)
-local slow = 0
-for _, e in ipairs(edges) do
-	if hasMode(e, "TRUCK") and e.speed then
-		slow = slow + 1
-		check(e.speed == network.CROSS_SPEED, "unexpected truck lane speed limit " .. tostring(e.speed))
-	end
-end
-check(slow == 8, "expected 8 crossover half-lanes, got " .. slow)
-if os.getenv("TWP_SHOW_DIST") then for i, t in ipairs(new.terminals) do local vp = key(nodes[t.vehicleNode + 1].node[1]) print(i, fromN[vp], fromS[vp]) end end
+local fromN, fromS = reach(IN_N), reach(IN_S)
+check(not fromN[OUT_INNER] and not fromS[OUT_OUTER], "the two ways in must not lead into each other's way out")
 for i, t in ipairs(new.terminals) do
 	local vp = key(nodes[t.vehicleNode + 1].node[1])
 	local after = reach(vp)
-	-- whichever lane the street puts a truck in, it gets everywhere and out either lane:
-	-- no leaving and coming back in (seen in game with 1.5)
-	check(fromN[vp] and fromS[vp], "terminal " .. i .. " not reachable from both gate lanes")
-	check(after[OUT_INNER] and after[OUT_OUTER], "terminal " .. i .. " cannot reach both exit lanes")
-	-- ... but each stream's own lane stays the shorter way in, so the lanes are both used
-	if fromN[vp] and fromS[vp] then
-		if i >= 3 and i < FIRST_PARK then
-			check(fromS[vp] < fromN[vp], string.format("bay terminal %d: south lane %.1f m must beat north lane %.1f m", i, fromS[vp], fromN[vp]))
-		else
-			check(fromN[vp] < fromS[vp], string.format("terminal %d: north lane %.1f m must beat south lane %.1f m", i, fromN[vp], fromS[vp]))
-		end
+	if i >= 3 and i < FIRST_PARK then
+		check(fromS[vp] and not fromN[vp], "bay terminal " .. i .. " must be reached from the gate's south lane only")
+		check(after[OUT_INNER] and not after[OUT_OUTER], "bay terminal " .. i .. " must leave by the inner lane only")
+	else
+		check(fromN[vp] and not fromS[vp], "terminal " .. i .. " must be reached from the gate's north lane only")
+		check(after[OUT_OUTER] and not after[OUT_INNER], "terminal " .. i .. " must leave by the outer lane only")
 	end
+end
+-- no crossovers between the two streams (1.6-1.8 had them; in game they made the route planner
+-- push every truck through one street lane): truck lanes carry no special speed limit either
+for _, e in ipairs(edges) do
+	if hasMode(e, "TRUCK") then check(e.speed == nil, "truck lane with a speed limit (a crossover?)") end
 end
 for n, succ in pairs(out) do
 	check(#succ > 0 or n == OUT_OUTER or n == OUT_INNER, "truck dead end at " .. n)
