@@ -207,11 +207,13 @@ check(next(upgrade.rebuildParams(nil)) == nil, "rebuild with no params")
 
 -- 7. the popup, driven through a fake GUI
 local clicks, texts, upgrades, windows = {}, {}, {}, 0
+local createdButtons, closed = {}, 0
 local function widget(kind)
 	local w = { kind = kind }
 	return setmetatable(w, { __index = function(_, name)
 		return function(self, a)
 			if name == "onClick" then clicks[self] = a end
+			if name == "close" then closed = closed + 1 end
 			if name == "setText" then texts[#texts + 1] = a end
 		end
 	end })
@@ -220,7 +222,7 @@ api.gui = {
 	layout = { BoxLayout = { new = function() return widget("box") end } },
 	comp = {
 		TextView = { new = function(t) texts[#texts + 1] = t return widget("text") end },
-		Button = { new = function() return widget("button") end },
+		Button = { new = function() local w = widget("button") createdButtons[#createdButtons + 1] = w return w end },
 		Window = { new = function() windows = windows + 1 return widget("window") end },
 	},
 	util = { getGameUI = function() error("no renderer in the fake") end },
@@ -252,14 +254,11 @@ for _ = 1, 29 do gs.guiUpdate() end
 local before = windows
 gs.guiUpdate()
 check(before == 0 and windows == 1, "popup appears once, after the UI has settled")
-local buttons = {}
-for b in pairs(clicks) do buttons[#buttons + 1] = b end
-check(#buttons == 2, "popup has two buttons")
-for _, b in ipairs(buttons) do
-	clicks[b]() -- "Not now" only closes; "Rebuild now" queues the work
-end
+check(#createdButtons == 2 and clicks[createdButtons[1]] and clicks[createdButtons[2]], "popup has two buttons")
+clicks[createdButtons[1]]() -- "Rebuild now" (created first) only queues the work
 check(#events == 0, "nothing sent inside the click handler itself")
 gs.guiUpdate()
+check(closed == 1, "the popup closes once the rebuild is requested")
 check(#upgrades == 0, "the GUI thread does not rebuild")
 check(#events == 1 and events[1][2] == "rebuild" and events[1][3].ids[1] == 50, "the GUI asks the engine to rebuild warehouse 50")
 -- deliver the event on the "engine thread"
@@ -269,11 +268,17 @@ gs.handleEvent("other", "__someone_else__", "rebuild", { ids = { 50 } })
 _G.game = { interface = guiInterface }
 check(#upgrades == 1 and upgrades[1][1] == 50 and upgrades[1][2] == "assets/dhl_warenlager.con", "warehouse 50 rebuilt once")
 check(upgrades[1] and upgrades[1][3].twp_storage == 5 and upgrades[1][3].seed == nil, "rebuilt with its own settings, no seed")
-for _ = 1, 60 do gs.guiUpdate() end
+-- after the click the GUI must not read the warehouses again: in game (1.9) a recount read them
+-- while the engine was still replacing them and crashed the game inside guiUpdate
+local guiReads = 0
+local realGet, scs = api.engine.getComponent, api.engine.system.streetConnectorSystem
+local realMap = scs.getStation2ConstructionMap
+api.engine.getComponent = function(...) guiReads = guiReads + 1 return realGet(...) end
+scs.getStation2ConstructionMap = function(...) guiReads = guiReads + 1 return realMap(...) end
+for _ = 1, 200 do gs.guiUpdate() end
+api.engine.getComponent, scs.getStation2ConstructionMap = realGet, realMap
 print = realPrint
-local sawDone = false
-for _, t in ipairs(texts) do if tostring(t):find("Rebuilt 1 of 1") then sawDone = true end end
-check(sawDone, "popup reports the result")
+check(guiReads == 0, "the GUI read warehouse data " .. guiReads .. " times after Rebuild now")
 for _ = 1, 50 do gs.guiUpdate() end
 check(windows == 1, "popup is not shown again in the same session")
 for _, s in ipairs(printed) do check(not s:find("failed"), "script error: " .. s) end

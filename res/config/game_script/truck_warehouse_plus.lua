@@ -110,11 +110,12 @@ end
 -- Script events reach every game script, so the id is namespaced.
 local EVENT_ID = "__truck_warehouse_plus__"
 local POPUP_AFTER_FRAMES = 30 -- let the game UI finish loading first
-local RECHECK_AFTER_FRAMES = 60 -- then count again to report what the engine rebuilt
 local guiFrames = 0
 local guiChecked = false
 local guiWork = nil -- runs on the next guiUpdate, outside the button callback
-local guiRecheck = nil -- { at = frame, run = fn }
+-- After "Rebuild now" the GUI must not read the warehouses again: in game (1.9) a recount 60
+-- frames later read them while the engine was still replacing them and crashed the game inside
+-- guiUpdate (a C++ crash, no Lua error to catch). The result goes to the log only.
 
 local function findOutdated()
 	return upgrade.findOutdated({
@@ -192,15 +193,7 @@ local function showPopup(outdated)
 			local ids = {}
 			for i, w in ipairs(outdated) do ids[i] = w.id end
 			game.interface.sendScriptEvent(EVENT_ID, "rebuild", { ids = ids })
-			text:setText(_("TWP_POPUP_WORKING"))
-			yes:setVisible(false, false)
-			guiRecheck = {
-				at = guiFrames + RECHECK_AFTER_FRAMES,
-				run = function()
-					local left = findOutdated()
-					text:setText(string.format(_("TWP_POPUP_DONE"), #outdated - #left, #outdated))
-				end,
-			}
+			window:close()
 		end
 	end)
 	no:onClick(function() window:close() end)
@@ -213,12 +206,6 @@ local function guiCheck()
 		guiWork = nil
 		local ok, err = pcall(work)
 		if not ok then print(LOG .. "rebuild failed: " .. tostring(err)) end
-	end
-	if guiRecheck and guiFrames >= guiRecheck.at then
-		local run = guiRecheck.run
-		guiRecheck = nil
-		local ok, err = pcall(run)
-		if not ok then print(LOG .. "recheck failed: " .. tostring(err)) end
 	end
 	if guiChecked then return end
 	if guiFrames < POPUP_AFTER_FRAMES then return end
