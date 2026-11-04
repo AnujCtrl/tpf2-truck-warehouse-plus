@@ -13,9 +13,12 @@ other terminal" of a smaller warehouse, which is extended when the warehouse gro
 warehouse out of this entirely, set "Spread trucks over all bays" to No on the warehouse.
 No saved state: `sent` only stops a rejected update from being re-sent every scan.
 
-2. (GUI thread) At the start of a session, offer to rebuild warehouses that were built with
-an older layout of this mod: existing constructions keep the lanes they were built with until
-they are rebuilt (logic in truck_warehouse_plus/upgrade.lua).
+2. At the start of a session, offer to rebuild warehouses that were built with an older layout
+of this mod: existing constructions keep the lanes they were built with until they are rebuilt
+(logic in truck_warehouse_plus/upgrade.lua). The popup lives on the GUI thread, but
+game.interface.upgradeConstruction only exists on the engine thread (in game 2026-11-04:
+"attempt to call field 'upgradeConstruction' (a nil value)" from the GUI), so the button sends a
+script event and handleEvent does the rebuild.
 
 Entity ids are checked with entityExists before every getComponent: the game writes a
 minidump at the moment it throws, even when a pcall catches it.
@@ -104,10 +107,14 @@ end
 ---------------------------------------------------------------------------
 -- GUI thread: rebuild popup
 
+-- Script events reach every game script, so the id is namespaced.
+local EVENT_ID = "__truck_warehouse_plus__"
 local POPUP_AFTER_FRAMES = 30 -- let the game UI finish loading first
+local RECHECK_AFTER_FRAMES = 60 -- then count again to report what the engine rebuilt
 local guiFrames = 0
 local guiChecked = false
 local guiWork = nil -- runs on the next guiUpdate, outside the button callback
+local guiRecheck = nil -- { at = frame, run = fn }
 
 local function findOutdated()
 	return upgrade.findOutdated({
@@ -124,24 +131,25 @@ local function findOutdated()
 	}, #network.build().terminals)
 end
 
-local function rebuild(outdated)
-	local done = 0
-	for _, w in ipairs(outdated) do
-		if exists(w.id) then
-			local con = api.engine.getComponent(w.id, api.type.ComponentType.CONSTRUCTION)
-			if con then
+-- engine thread (handleEvent): rebuild the warehouses the popup listed
+local function rebuild(ids)
+	local done, total = 0, 0
+	for _, id in ipairs(ids) do
+		total = total + 1
+		if exists(id) then
+			local con = api.engine.getComponent(id, api.type.ComponentType.CONSTRUCTION)
+			if con and upgrade.isWarehouse(con.fileName) then
 				local params = upgrade.rebuildParams(con.params)
-				local ok, err = pcall(function() game.interface.upgradeConstruction(w.id, con.fileName, params) end)
+				local ok, err = pcall(function() game.interface.upgradeConstruction(id, con.fileName, params) end)
 				if ok then
 					done = done + 1
 				else
-					print(LOG .. "rebuilding warehouse " .. tostring(w.id) .. " failed: " .. tostring(err))
+					print(LOG .. "rebuilding warehouse " .. tostring(id) .. " failed: " .. tostring(err))
 				end
 			end
 		end
 	end
-	print(LOG .. "rebuilt " .. done .. " of " .. #outdated .. " warehouses")
-	return done
+	print(LOG .. "rebuilt " .. done .. " of " .. total .. " warehouses")
 end
 
 local function showPopup(outdated)
@@ -165,23 +173,38 @@ local function showPopup(outdated)
 
 	yes:onClick(function()
 		guiWork = function()
-			local done = rebuild(outdated)
-			text:setText(string.format(_("TWP_POPUP_DONE"), done, #outdated))
+			local ids = {}
+			for i, w in ipairs(outdated) do ids[i] = w.id end
+			game.interface.sendScriptEvent(EVENT_ID, "rebuild", { ids = ids })
+			text:setText(_("TWP_POPUP_WORKING"))
 			yes:setVisible(false, false)
+			guiRecheck = {
+				at = guiFrames + RECHECK_AFTER_FRAMES,
+				run = function()
+					local left = findOutdated()
+					text:setText(string.format(_("TWP_POPUP_DONE"), #outdated - #left, #outdated))
+				end,
+			}
 		end
 	end)
 	no:onClick(function() window:close() end)
 end
 
 local function guiCheck()
+	guiFrames = guiFrames + 1
 	if guiWork then
 		local work = guiWork
 		guiWork = nil
 		local ok, err = pcall(work)
 		if not ok then print(LOG .. "rebuild failed: " .. tostring(err)) end
 	end
+	if guiRecheck and guiFrames >= guiRecheck.at then
+		local run = guiRecheck.run
+		guiRecheck = nil
+		local ok, err = pcall(run)
+		if not ok then print(LOG .. "recheck failed: " .. tostring(err)) end
+	end
 	if guiChecked then return end
-	guiFrames = guiFrames + 1
 	if guiFrames < POPUP_AFTER_FRAMES then return end
 	guiChecked = true
 	local ok, outdated = pcall(findOutdated)
@@ -197,6 +220,11 @@ end
 function data()
 	return {
 		guiUpdate = guiCheck,
+		handleEvent = function(_, id, name, param)
+			if id ~= EVENT_ID or name ~= "rebuild" then return end
+			local ok, err = pcall(function() rebuild(type(param) == "table" and param.ids or {}) end)
+			if not ok then print(LOG .. "rebuild failed: " .. tostring(err)) end
+		end,
 		update = function()
 			tick = tick + 1
 			if tick < SCAN_EVERY then return end

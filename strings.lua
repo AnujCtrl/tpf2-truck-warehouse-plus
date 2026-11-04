@@ -19,6 +19,7 @@ return {
 		["TWP_POPUP_TEXT"] = "%d Warenlager wurde(n) mit einer älteren Version dieser Mod gebaut und nutzen noch die alten Fahrspuren.\nJetzt neu bauen (%d Haltepunkte)? Linien bleiben verbunden, die Einstellungen bleiben erhalten.",
 		["TWP_POPUP_REBUILD"] = "Jetzt neu bauen",
 		["TWP_POPUP_LATER"] = "Später",
+		["TWP_POPUP_WORKING"] = "Wird neu gebaut ...",
 		["TWP_POPUP_DONE"] = "%d von %d Warenlagern neu gebaut.",
 	},
 	en = {
@@ -39,6 +40,7 @@ return {
 		["TWP_POPUP_TEXT"] = "%d warehouse(s) were built with an older version of this mod and still use the old lanes.\nRebuild them now (%d terminals)? Lines stay attached and the settings are kept.",
 		["TWP_POPUP_REBUILD"] = "Rebuild now",
 		["TWP_POPUP_LATER"] = "Not now",
+		["TWP_POPUP_WORKING"] = "Rebuilding ...",
 		["TWP_POPUP_DONE"] = "Rebuilt %d of %d warehouses.",
 	},
 }

@@ -81,6 +81,7 @@ local fakeLines = {
 }
 entities[200] = "group"
 local params = {}
+local fakeTerminals = 15
 _G.api = {
 	type = {
 		ComponentType = { STATION_GROUP = "SG", CONSTRUCTION = "CON", STATION = "ST", LINE = "LINE" },
@@ -92,7 +93,7 @@ _G.api = {
 		getComponent = function(e, t)
 			if t == "SG" then return ({ [100] = { stations = { 10 } }, [200] = { stations = { 20 } } })[e] end
 			if t == "CON" and e == 50 then return { fileName = "assets/dhl_warenlager.con", params = params } end
-			if t == "ST" and e == 10 then local ts = {} for i = 1, 15 do ts[i] = {} end return { terminals = ts } end
+			if t == "ST" and e == 10 then local ts = {} for i = 1, fakeTerminals do ts[i] = {} end return { terminals = ts } end
 			if t == "LINE" then return fakeLines[e] end
 		end,
 		system = {
@@ -193,7 +194,15 @@ api.gui = {
 	util = { getGameUI = function() error("no renderer in the fake") end },
 }
 api.engine.system.streetConnectorSystem.getStation2ConstructionMap = function() return { [10] = 50 } end
-_G.game = { interface = { upgradeConstruction = function(id, file, prm) upgrades[#upgrades + 1] = { id, file, prm } end } }
+-- like the real game: the GUI thread can send script events but has no upgradeConstruction;
+-- the engine thread (handleEvent) has it
+local events = {}
+local guiInterface = { sendScriptEvent = function(id, name, param) events[#events + 1] = { id, name, param } end }
+local engineInterface = { upgradeConstruction = function(id, file, prm)
+	upgrades[#upgrades + 1] = { id, file, prm }
+	fakeTerminals = 21
+end }
+_G.game = { interface = guiInterface }
 local strings = (function() dofile("strings.lua") return data().en end)()
 _G._ = function(s) return strings[s] or s end
 params = { twp_storage = 5, seed = 99 }
@@ -211,11 +220,19 @@ check(#buttons == 2, "popup has two buttons")
 for _, b in ipairs(buttons) do
 	clicks[b]() -- "Not now" only closes; "Rebuild now" queues the work
 end
-check(#upgrades == 0, "no rebuild inside the click handler itself")
+check(#events == 0, "nothing sent inside the click handler itself")
 gs.guiUpdate()
-print = realPrint
-check(#upgrades == 1 and upgrades[1][1] == 50 and upgrades[1][2] == "assets/dhl_warenlager.con", "warehouse 50 rebuilt")
+check(#upgrades == 0, "the GUI thread does not rebuild")
+check(#events == 1 and events[1][2] == "rebuild" and events[1][3].ids[1] == 50, "the GUI asks the engine to rebuild warehouse 50")
+-- deliver the event on the "engine thread"
+_G.game = { interface = engineInterface }
+gs.handleEvent("truck_warehouse_plus.lua", events[1] and events[1][1], "rebuild", events[1] and events[1][3])
+gs.handleEvent("other", "__someone_else__", "rebuild", { ids = { 50 } })
+_G.game = { interface = guiInterface }
+check(#upgrades == 1 and upgrades[1][1] == 50 and upgrades[1][2] == "assets/dhl_warenlager.con", "warehouse 50 rebuilt once")
 check(upgrades[1] and upgrades[1][3].twp_storage == 5 and upgrades[1][3].seed == nil, "rebuilt with its own settings, no seed")
+for _ = 1, 60 do gs.guiUpdate() end
+print = realPrint
 local sawDone = false
 for _, t in ipairs(texts) do if tostring(t):find("Rebuilt 1 of 1") then sawDone = true end end
 check(sawDone, "popup reports the result")
