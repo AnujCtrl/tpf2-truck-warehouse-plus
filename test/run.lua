@@ -67,22 +67,11 @@ f()
 local orig = data().metadata.transportNetworkProvider
 local oedges, onodes = edgesOf(orig)
 
--- 1. every original edge survives (the north road is split in two at x = -120.375)
+-- 1. every original edge survives, unchanged
 for i, oe in ipairs(oedges) do
 	local found = false
 	for _, ne in ipairs(edges) do
 		if sameNode(oe.a, ne.a) and sameNode(oe.b, ne.b) and hasMode(ne, oe.modes[1]) then found = true break end
-	end
-	if not found and key(oe.a[1]) == key({ -60, 19, 0 }) and key(oe.b[1]) == key({ -134, 19, 0 }) then
-		local halves = 0
-		for _, ne in ipairs(edges) do
-			if ne.a[1][2] == 19 and ne.b[1][2] == 19 and hasMode(ne, "TRUCK") and
-				((key(ne.a[1]) == key({ -60, 19, 0 }) and key(ne.b[1]) == key({ -120.375, 19, 0 })) or
-				(key(ne.a[1]) == key({ -120.375, 19, 0 }) and key(ne.b[1]) == key({ -134, 19, 0 }))) then
-				halves = halves + 1
-			end
-		end
-		found = halves == 2
 	end
 	check(found, "original edge " .. (i - 1) .. " missing: " .. key(oe.a[1]) .. " -> " .. key(oe.b[1]))
 end
@@ -132,6 +121,8 @@ for _, e in ipairs(edges) do
 	end
 end
 local ENTRY, EXIT = key({ 15.5, -0.65701, 0 }), key({ 15.5, -60.0858, 0 })
+local EXIT_NORTH = key({ network.GATE_OUT[1], network.GATE_OUT[2], 0 })
+local LOOP_NORTH = key({ -60, 19, 0 }) -- start of the loop's north road
 local function reach(from)
 	local seen, q = { [from] = true }, { from }
 	while #q > 0 do
@@ -146,10 +137,16 @@ local fromEntry = reach(ENTRY)
 for i, t in ipairs(new.terminals) do
 	local vp = key(nodes[t.vehicleNode + 1].node[1])
 	check(fromEntry[vp], "terminal " .. i .. " not reachable from the entrance")
-	check(reach(vp)[EXIT], "terminal " .. i .. " cannot reach the exit")
+	local after = reach(vp)
+	if i <= 2 then
+		check(after[EXIT], "lay-by " .. i .. " cannot reach the south exit")
+	else
+		check(after[EXIT_NORTH], "bay terminal " .. i .. " cannot reach the north gate exit")
+		check(not after[LOOP_NORTH] and not after[EXIT], "bay terminal " .. i .. " can still drive into the loop")
+	end
 end
 for n, succ in pairs(out) do
-	check(#succ > 0 or n == EXIT, "truck dead end at " .. n)
+	check(#succ > 0 or n == EXIT or n == EXIT_NORTH, "truck dead end at " .. n)
 	check((inn[n] or 0) > 0 or n == ENTRY, "truck node nobody drives into: " .. n)
 end
 
@@ -194,7 +191,11 @@ for _, e in ipairs(edges) do
 			check(not inRect(p, -135, -119, -53, 12, HALF), "lane hits the west annex at " .. key(p))
 			check(not (p[1] > -120 and p[1] < -42 and p[2] < network.WALL_Y + 0.4), "lane goes through the dock wall at " .. key(p))
 			check(p[2] < 22.6542 - HALF, "lane hits the north fence at " .. key(p))
-			if p[2] < network.MOUTH_Y then
+			check(not inRect(p, -48.6, -42.2, -16, -2.6, HALF), "lane hits the striped island east of the bays at " .. key(p))
+			check(not inRect(p, -2.2, 5.7, -3.3, -2.0, HALF), "lane hits the gatehouse island at " .. key(p))
+			check(not inRect(p, -21.2, -2.8, 2.6, 8.4, HALF), "lane hits the gate's traffic island at " .. key(p))
+			check(not (p[1] > -23 and p[1] < 7.2 and p[2] < -7.8 + HALF), "lane hits the gate building / fence at " .. key(p))
+			if p[2] < network.MOUTH_Y and p[1] < network.bayCenter(network.BAY_COUNT) + network.BAY_DX / 2 then
 				-- inside the bays: stay in this bay's own lane (centre .. centre + IN_OFFSET)
 				local k = math.floor((p[1] - (network.BAY_X0 - network.BAY_DX / 2)) / network.BAY_DX) + 1
 				local xc = network.bayCenter(k)

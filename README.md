@@ -17,7 +17,11 @@ that the few terminals were a known problem; this fork fixes that.
 
 How the bays work: trucks come off the loop onto a one-way aisle in front of the hall, drive into
 the east half of their bay, U-turn at the dock door and stop at the bay mouth facing out, so the trailer
-sits backed onto the door. They leave west along the aisle and rejoin the loop's north road.
+sits backed onto the door. They leave by turning right onto an eastbound exit lane along the bay mouths
+and drive straight out through the north gate's outbound lane (the yard road was painted two-way all
+along; the original only drove in). The loop round the building is left to the two lay-bys, so bay
+traffic and lay-by traffic never share a lane. (1.0 and 1.1 sent bay trucks round the whole loop to the
+south gate, which jammed.)
 Road vehicles in TpF2 cannot reverse, so the U-turn is the price of the realistic parked pose.
 
 Cargo for each bay waits on a short lane behind its door, connected through a corridor inside the hall to
@@ -42,7 +46,7 @@ Existing warehouses keep their original two terminals as terminals 1 and 2, so t
 
 - `lua5.2 test/run.lua`: checks (headless, against the game's own `res/scripts`):
   the original network is preserved, all indices are valid, every terminal is reachable from the entrance
-  and can reach the exit, no truck dead ends, every cargo area reaches both sidewalks, the new lanes
+  and can reach its exit (bays: the north gate, without touching the loop; lay-bys: the south gate), no truck dead ends, every cargo area reaches both sidewalks, the new lanes
   stay clear of the wall, island, annex and fence and inside their own bay, and all 13 constructions
   build 15 terminal groups with the selected storage.
 - `lua5.2 test/auto_bays.lua`: the bay assignment (which terminals, hand-made stops left alone, no
