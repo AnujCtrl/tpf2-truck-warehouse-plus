@@ -26,7 +26,7 @@ local function edgesOf(tnp)
 	local out, nodes = {}, {}
 	for _, l in ipairs(tnp.laneLists) do
 		for i = 1, #l.nodes, 2 do
-			local e = { a = l.nodes[i], b = l.nodes[i + 1], modes = l.transportModes, index = #out }
+			local e = { a = l.nodes[i], b = l.nodes[i + 1], modes = l.transportModes, index = #out, speed = l.speedLimit }
 			out[#out + 1] = e
 			nodes[#nodes + 1] = { node = l.nodes[i], edge = e }
 			nodes[#nodes + 1] = { node = l.nodes[i + 1], edge = e }
@@ -202,6 +202,57 @@ local function dist(from)
 	end
 end
 local fromN, fromS = dist(IN_N), dist(IN_S)
+-- the same with lane speed: crossovers are slow lanes, so the direct lane must win by far more
+-- than the few metres a street turn into the other lane can cost (in metres at stock station
+-- lane speed, 20)
+local NORMAL = 20
+local function tdist(from)
+	local w = {}
+	for _, e in ipairs(edges) do
+		if hasMode(e, "TRUCK") then
+			local len, prev = 0, hermite(e, 0)
+			for k = 1, 50 do
+				local q = hermite(e, k / 50)
+				len = len + math.sqrt((q[1] - prev[1]) ^ 2 + (q[2] - prev[2]) ^ 2)
+				prev = q
+			end
+			local a = key(e.a[1])
+			w[a] = w[a] or {}
+			table.insert(w[a], { key(e.b[1]), len * NORMAL / (e.speed or NORMAL) })
+		end
+	end
+	local d, done = { [from] = 0 }, {}
+	while true do
+		local best, bk = math.huge, nil
+		for k, v in pairs(d) do if not done[k] and v < best then best, bk = v, k end end
+		if not bk then return d end
+		done[bk] = true
+		for _, x in ipairs(w[bk] or {}) do
+			local nd = best + x[2]
+			if not d[x[1]] or nd < d[x[1]] then d[x[1]] = nd end
+		end
+	end
+end
+local tN, tS = tdist(IN_N), tdist(IN_S)
+local MARGIN = 25
+for i, t in ipairs(new.terminals) do
+	local vp = key(nodes[t.vehicleNode + 1].node[1])
+	if tN[vp] and tS[vp] then
+		local own, other = tN[vp], tS[vp]
+		if i >= 3 and i < FIRST_PARK then own, other = tS[vp], tN[vp] end
+		check(other - own >= MARGIN, string.format("terminal %d: own gate lane wins by only %.1f m-equivalent", i, other - own))
+		if os.getenv("TWP_SHOW_DIST") then print("margin", i, other - own) end
+	end
+end
+-- crossovers are the only slow lanes, and there are exactly four of them (two halves each)
+local slow = 0
+for _, e in ipairs(edges) do
+	if hasMode(e, "TRUCK") and e.speed then
+		slow = slow + 1
+		check(e.speed == network.CROSS_SPEED, "unexpected truck lane speed limit " .. tostring(e.speed))
+	end
+end
+check(slow == 8, "expected 8 crossover half-lanes, got " .. slow)
 if os.getenv("TWP_SHOW_DIST") then for i, t in ipairs(new.terminals) do local vp = key(nodes[t.vehicleNode + 1].node[1]) print(i, fromN[vp], fromS[vp]) end end
 for i, t in ipairs(new.terminals) do
 	local vp = key(nodes[t.vehicleNode + 1].node[1])
@@ -315,7 +366,7 @@ do
 	-- cut points of original straight edges are merge points too
 	for n in pairs(cutNodes) do origNode[n] = true end
 	for _, e in ipairs(edges) do
-		if hasMode(e, "TRUCK") and not origKeys[key(e.a[1]) .. ">" .. key(e.b[1])]
+		if hasMode(e, "TRUCK") and not origKeys[key(e.a[1]) .. ">" .. key(e.b[1])] and not e.speed
 			and not origNode[key(e.a[1])] and not origNode[key(e.b[1])] then
 			for s = 0, 1.0001, 0.05 do
 				local p = hermite(e, s)

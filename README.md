@@ -39,8 +39,11 @@ changing, so two parallel lanes are only both used when different traffic is ass
 the split above. Which gate lane a truck actually arrives in is up to your roads, though: in 1.5 every
 truck turning in from the main road landed in the north lane and the bays' exit lane fed straight back
 into the entrance, so trucks left and came back in. Since 1.6 an **X of crossovers just inside each
-gate** lets either lane reach every terminal and either exit lane. The direct lane stays the shorter
-route (by about 1 m), so trucks only cross over when the street left them in the other lane.
+gate** lets either lane reach every terminal and either exit lane. In 1.6/1.7 they were only ~1 m
+longer than the direct lane, which made the route planner send every truck through one street lane
+and swap inside, so both gates were effectively single-lane again. Since 1.8 the crossovers are
+**slow lanes** (speed limit 5, stock station lanes use 20): a truck picks its own lane at the junction
+whenever your roads allow it and only crosses over when they don't.
 
 **Your roads must match:** connect the north gate with a road that runs one-way *into* the gate and the
 south gate with a road that runs one-way *out of* it (e.g. *Two-lane one-way road*). A two-way road
