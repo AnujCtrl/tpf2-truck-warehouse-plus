@@ -29,7 +29,12 @@ M.EXIT_R = 4.0 -- radius of the left turn bay -> exit lane
 M.IN_OFFSET = 1.5 -- entry leg runs this far east of the bay centre
 M.HAIRPIN_Y = -18.0 -- where the in-bay U-turn starts (dips 1.5 m further, to -19.5)
 M.HAIRPIN_K = 6.0 -- tangent length of the U-turn (dip = K / 4)
-M.STOP_Y = -2.0 -- vehicle node: cab at the bay mouth, trailer back against the door
+M.STOP_Y = -2.0 -- end of the parked leg at the bay mouth, where the exit turn starts
+-- TpF2 stops a road vehicle with its MIDDLE on the terminal's vehicle node (seen in game 1.6:
+-- with the node at the bay mouth, half of every parked truck stood on the shared exit lane and
+-- held up everyone behind it; the original lay-bys centre theirs on an 8 m straight too). So the
+-- node sits in the middle of the parked leg: a truck up to ~21 m stays on its own bay's lanes.
+M.PARK_Y = (M.HAIRPIN_Y + M.STOP_Y) / 2 -- vehicle node of a bay
 M.EXIT_Y = M.STOP_Y + M.EXIT_R -- westbound exit lane along the bay mouths
 
 -- Gates (1.5): both street stubs are one-way two-lane roads, so each gate's two lanes run the
@@ -53,7 +58,8 @@ M.OUT_CROSS = { -24.0, -22.0, -8.0, -6.0 } -- south gate: outer->inner from [1] 
 M.WEST_EXIT_X = -110.375 -- where the bays' exit lane turns north
 M.INNER_NORTH_Y = 15.5 -- original north road: y = 19
 M.INNER_WEST_X = -140.0 -- original west road: x = -144
-M.INNER_SOUTH_Y = -58.0 -- original south road: y = -61; lay-by stops at -55.5 (2.5 m: a truck width)
+M.INNER_SOUTH_Y = -58.5 -- original south road: y = -61, 2.5 m (a truck width) away; as far as that
+-- allows from the lay-bys, whose parked trucks (centred on -55.5) reach back down their entry curves
 M.PARK_MERGE_X = -64.0 -- where the parking slots' exit joins the north road
 
 -- Truck parking slots inside the north gate (painted in dhl_linien.msh: stripes at
@@ -65,7 +71,7 @@ M.PARK_X0 = -17.33 -- open (west) end of the slots
 M.PARK_X1 = 0.67 -- closed (east) end, against the yard fence at x = 1.27
 M.PARK_OFFSET = 1.5 -- in-lane runs this far south of the out-lane (both inside the slot)
 M.PARK_HAIRPIN_X = -1.75 -- U-turn start (bulges K/4 = 1.5 m further east)
-M.PARK_STOP_X = -17.75 -- vehicle node: cab at the slot mouth
+M.PARK_STOP_X = -17.75 -- slot mouth, where the exit curve starts (vehicle node: middle of the slot)
 -- a barrier bar (dhl_gelaende, ~2.4 m up) spans x = -2.55, y = 2.5 .. 13.8 across the end of the
 -- first slot, so that slot turns before it and its parked leg is 14 m instead of 16
 M.BAR = { x = -2.55, y0 = 2.47, y1 = 13.77 }
@@ -295,7 +301,8 @@ local function dockTruckLanes(b, truck, orig)
 		-- U-turn at the dock door (clockwise: south -> west -> north)
 		b.edge(truck, P(xin, M.HAIRPIN_Y), T(0, -M.HAIRPIN_K), P(xc, M.HAIRPIN_Y), T(0, M.HAIRPIN_K))
 		-- pull forward to the bay mouth: the trailer ends up backed onto the door
-		b.straight(truck, P(xc, M.HAIRPIN_Y), P(xc, M.STOP_Y))
+		b.straight(truck, P(xc, M.HAIRPIN_Y), P(xc, M.PARK_Y))
+		bay.park = b.straight(truck, P(xc, M.PARK_Y), P(xc, M.STOP_Y)) -- starts at the vehicle node
 		-- left turn onto the westbound exit lane
 		bay.leave = b.edge(truck, P(xc, M.STOP_Y), T(0, XQ), P(xc - XR, XY), T(-XQ, 0))
 	end
@@ -384,7 +391,9 @@ local function parkingTruckLanes(b, truck)
 		b.straight(truck, P(fx + er, s.yin), P(s.hx, s.yin))
 		-- U-turn at the fence end (anticlockwise: east -> north -> west)
 		b.edge(truck, P(s.hx, s.yin), T(6, 0), P(s.hx, s.yout), T(-6, 0))
-		b.straight(truck, P(s.hx, s.yout), P(s.sx, s.yout))
+		local mid = (s.hx + s.sx) / 2 -- vehicle node: the truck's middle
+		b.straight(truck, P(s.hx, s.yout), P(mid, s.yout))
+		s.park = b.straight(truck, P(mid, s.yout), P(s.sx, s.yout))
 	end
 
 	-- exits: each slot curves onto the collector; slots nearest the collector join first so
@@ -450,7 +459,7 @@ function M.build()
 	for k = 1, M.BAY_COUNT do
 		local bay = bays[k]
 		terminals[#terminals + 1] = {
-			vehicleNode = { bay.leave, 0 },
+			vehicleNode = { bay.park, 0 },
 			personEdges = { bay.dock },
 			personNodes = { { bay.dock, 0 }, { bay.dock, 1 } },
 		}
@@ -460,7 +469,7 @@ function M.build()
 	for k = 1, M.PARK_COUNT do
 		local s = slots[k]
 		terminals[#terminals + 1] = {
-			vehicleNode = { s.leave, 0 },
+			vehicleNode = { s.park, 0 },
 			personEdges = { s.cargo },
 			personNodes = { { s.cargo, 0 }, { s.cargo, 1 } },
 		}

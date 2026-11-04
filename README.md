@@ -19,7 +19,9 @@ that the few terminals were a known problem; this fork fixes that.
 How the bays work: trucks come off the loop onto a one-way aisle in front of the hall, drive into
 the east half of their bay, U-turn at the dock door and stop at the bay mouth facing out, so the trailer
 sits backed onto the door. Road vehicles in TpF2 cannot reverse, so the U-turn is the price of the
-realistic parked pose. The parking slots work the same way: in from the gate, U-turn at the fence end,
+realistic parked pose. TpF2 stops a road vehicle with its *middle* on the terminal's stop node, so
+the node sits in the middle of each bay's and slot's parked leg (since 1.7; before that it was at the
+mouth, half of every parked truck stood on the shared exit lane and everyone behind it waited). The parking slots work the same way: in from the gate, U-turn at the fence end,
 parked facing out (the first slot turns early, before the barrier bar over its far end).
 
 Gates and the loop (1.5): both gate stubs are **one-way two-lane roads**. The north gate is the way

@@ -331,9 +331,97 @@ do
 end
 
 -- the parked leg is long enough for a semi-trailer (front at the stop node)
-check(network.STOP_Y - network.HAIRPIN_Y >= 15.9, "parked leg shorter than a 16 m truck")
-check(network.PARK_HAIRPIN_X - network.PARK_STOP_X >= 15.9, "parking slot leg shorter than a 16 m truck")
-check(network.PARK_FIRST_HAIRPIN_X - network.PARK_FIRST_STOP_X >= 14.0, "first parking slot leg shorter than 14 m")
+-- TpF2 stops a road vehicle with its middle on the vehicle node. A parked truck must not reach
+-- any lane other traffic uses: from the node, the lanes on both sides must be the terminal's
+-- own (one way in, one way out, no merge or branch) for half a long truck's length.
+do
+	local HALF_TRUCK = 10.5 -- a 21 m truck
+	local indeg, outdeg, succ, pred, elen = {}, {}, {}, {}, {}
+	for _, e in ipairs(edges) do
+		if hasMode(e, "TRUCK") then
+			local a, b = key(e.a[1]), key(e.b[1])
+			outdeg[a] = (outdeg[a] or 0) + 1
+			indeg[b] = (indeg[b] or 0) + 1
+			succ[a], pred[b] = b, a
+			local len, prev = 0, hermite(e, 0)
+			for k = 1, 50 do
+				local q = hermite(e, k / 50)
+				len = len + math.sqrt((q[1] - prev[1]) ^ 2 + (q[2] - prev[2]) ^ 2)
+				prev = q
+			end
+			elen[a .. ">" .. b] = len
+		end
+	end
+	local function private(n) return (indeg[n] or 0) == 1 and (outdeg[n] or 0) == 1 end
+	for i, t in ipairs(new.terminals) do
+		local vp = key(nodes[t.vehicleNode + 1].node[1])
+		local ahead, n = 0, vp
+		while (outdeg[n] or 0) == 1 do
+			local m = succ[n]
+			ahead = ahead + elen[n .. ">" .. m]
+			if not private(m) then break end
+			n = m
+		end
+		local behind, m = 0, vp
+		while (indeg[m] or 0) == 1 do
+			local q = pred[m]
+			behind = behind + elen[q .. ">" .. m]
+			if not private(q) then break end
+			m = q
+		end
+		-- ... and no other lane runs through a parked semi (16.5 m): sample its centre line along
+		-- its own lanes and require every other lane's centre to stay outside its body (1.25 m)
+		local SEMI_HALF = 8.25
+		local own, span = {}, {}
+		local function walk(start, dir)
+			local n, run = start, 0
+			while run < SEMI_HALF do
+				local m = dir > 0 and succ[n] or pred[n]
+				if not m then break end
+				local ek = dir > 0 and (n .. ">" .. m) or (m .. ">" .. n)
+				own[ek] = true
+				for _, e in ipairs(edges) do
+					if key(e.a[1]) .. ">" .. key(e.b[1]) == ek then
+						for k = 0, 20 do
+							local d = run + elen[ek] * k / 20
+							if d <= SEMI_HALF then span[#span + 1] = hermite(e, dir > 0 and k / 20 or 1 - k / 20) end
+						end
+					end
+				end
+				run = run + elen[ek]
+				n = m
+			end
+		end
+		walk(vp, 1)
+		walk(vp, -1)
+		-- the terminal's own way in runs alongside its parked leg (the in-bay U-turn): exclude it
+		local m2 = vp
+		while (indeg[m2] or 0) == 1 do
+			local q = pred[m2]
+			own[q .. ">" .. m2] = true
+			if not private(q) then break end
+			m2 = q
+		end
+		local closest, closestAt = math.huge, nil
+		for _, e in ipairs(edges) do
+			local ek = key(e.a[1]) .. ">" .. key(e.b[1])
+			if hasMode(e, "TRUCK") and not own[ek] then
+				for k = 0, 20 do
+					local q = hermite(e, k / 20)
+					for _, sp in ipairs(span) do
+						local d = (q[1] - sp[1]) ^ 2 + (q[2] - sp[2]) ^ 2
+						if d < closest then closest = d; closestAt = { q, sp } end
+					end
+				end
+			end
+		end
+		check(math.sqrt(closest) >= 1.25, string.format("terminal %d: another lane runs %.2f m from a parked truck's centre line", i, math.sqrt(closest)))
+		if os.getenv("TWP_SHOW_DIST") then print("clear", i, math.sqrt(closest), closestAt and key(closestAt[1]) or "", closestAt and key(closestAt[2]) or "") end
+		check(ahead >= HALF_TRUCK, string.format("terminal %d: a parked truck's front reaches shared lanes (%.1f m ahead)", i, ahead))
+		check(behind >= HALF_TRUCK, string.format("terminal %d: a parked truck's rear reaches shared lanes (%.1f m behind)", i, behind))
+		if os.getenv("TWP_SHOW_DIST") then print("private", i, ahead, behind) end
+	end
+end
 
 -- 7. constructions
 local consDir = "res/construction/assets/"
